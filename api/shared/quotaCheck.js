@@ -183,6 +183,15 @@ async function checkGpuQuota(token, subscriptionId, region, vmSku) {
 async function preFlightCheck(token, subscriptionId, region, vmSku) {
   const checks = [];
 
+  // Only GPU SKUs are supported for retry
+  if (!isGpuSku(vmSku)) {
+    return {
+      canRetry: false,
+      summary: `Retry blocked: ${vmSku || 'Unknown'} is not a GPU SKU. Only GPU VMs (NC/ND/NV/NP families) are supported.`,
+      checks: [{ check: 'GPU SKU Required', available: false, reason: `${vmSku || 'Unknown'} is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)` }],
+    };
+  }
+
   // 1. GPU SKU availability in region
   const skuCheck = await checkSkuAvailability(token, subscriptionId, region, vmSku);
   checks.push({ check: 'SKU Availability', ...skuCheck });
