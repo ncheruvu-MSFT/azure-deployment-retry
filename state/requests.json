@@ -13,15 +13,26 @@
     "notes": "Imported from failed deployment: gpt41-eastus-quota-test. Error: InsufficientQuota — This operation require 2000 new capacity in quota Tokens Per Minute (thousands) - 4.1 - Standard, which is bigger than the current available capacity 1000. The current quota usage is 0 and the quota l",
     "notifyEmail": "",
     "notifyTeams": "",
-    "status": "pending",
-    "attemptCount": 0,
+    "status": "retrying",
+    "attemptCount": 1,
     "maxAttempts": 432,
     "retryIntervalMinutes": 10,
     "createdAt": "2026-09-02T18:18:17.193Z",
-    "updatedAt": "2026-09-02T18:18:17.193Z",
-    "lastAttemptAt": null,
+    "updatedAt": "2026-09-02T18:18:36.475Z",
+    "lastAttemptAt": "2026-09-02T18:18:25.037Z",
     "completedAt": null,
-    "attempts": [],
-    "lastError": null
+    "attempts": [
+      {
+        "attemptNumber": 1,
+        "timestamp": "2026-09-02T18:18:25.037Z",
+        "result": "capacity_error",
+        "errorCode": "InsufficientQuota",
+        "errorMessage": "This operation require 2000 new capacity in quota Tokens Per Minute (thousands) - 4.1 - Standard, which is bigger than the current available capacity 1000. The current quota usage is 0 and the quota limit is 1000 for quota Tokens Per Minute (thousands) - 4.1 - Standard."
+      }
+    ],
+    "lastError": {
+      "code": "InsufficientQuota",
+      "message": "This operation require 2000 new capacity in quota Tokens Per Minute (thousands) - 4.1 - Standard, which is bigger than the current available capacity 1000. The current quota usage is 0 and the quota limit is 1000 for quota Tokens Per Minute (thousands) - 4.1 - Standard."
+    }
   }
 ]
