@@ -14,7 +14,7 @@ async function checkSkuAvailability(token, subscriptionId, region, vmSku) {
 
   try {
     const result = await armRequest('GET',
-      `/subscriptions/${subscriptionId}/providers/Microsoft.Compute/skus?api-version=2021-07-01&$filter=location eq '${region}'`,
+      `/subscriptions/${subscriptionId}/providers/Microsoft.Compute/skus?api-version=2021-07-01&%24filter=location%20eq%20'${region}'`,
       token);
 
     const skus = result.value || [];
