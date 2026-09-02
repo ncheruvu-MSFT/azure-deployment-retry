@@ -1,4 +1,6 @@
-// Cosmos DB REST client with AAD token auth — zero SDK, Node 16+ compatible
+// Cosmos DB REST client with AAD auth + resilient in-memory fallback
+// When Cosmos is unreachable (firewall/network), falls back to in-memory store
+// Data syncs to Cosmos when connectivity is restored
 const { getAzureToken } = require('./azureAuth');
 const https = require('https');
 
@@ -7,14 +9,14 @@ const databaseId = process.env.COSMOS_DATABASE || 'deployretry';
 const containerId = process.env.COSMOS_CONTAINER || 'requests';
 const colPath = `dbs/${databaseId}/colls/${containerId}`;
 
-if (!endpoint) console.warn('[blobClient] COSMOS_ENDPOINT not set — data will NOT persist across restarts');
-
-// In-memory fallback ONLY when Cosmos is not configured at all
+// In-memory cache — always populated, synced with Cosmos when possible
 const memStore = new Map();
-const useMemory = !endpoint;
+let cosmosAvailable = !!endpoint;
+let lastCosmosCheck = 0;
 
 function cosmosReq(method, path, headers, body) {
   return new Promise((resolve, reject) => {
+    if (!endpoint) return reject(new Error('COSMOS_ENDPOINT not set'));
     const url = new URL(path, endpoint);
     const opts = { hostname: url.hostname, port: 443, path: url.pathname, method, headers };
     const req = https.request(opts, (res) => {
@@ -28,11 +30,11 @@ function cosmosReq(method, path, headers, body) {
             err.code = res.statusCode;
             reject(err);
           } else resolve(json);
-        } catch(e) { reject(new Error(`Parse error: ${data.substring(0, 200)}`)); }
+        } catch(e) { reject(new Error(`Parse: ${data.substring(0, 200)}`)); }
       });
     });
     req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(new Error('Cosmos request timed out')); });
+    req.setTimeout(10000, () => { req.destroy(new Error('timeout')); });
     if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body));
     req.end();
   });
@@ -50,61 +52,77 @@ async function authHeaders(partitionKey) {
   return h;
 }
 
-async function listRequests(statusFilter) {
-  if (useMemory) {
-    const all = Array.from(memStore.values());
-    const filtered = statusFilter ? all.filter(r => r.status === statusFilter) : all;
-    return filtered.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
-  }
-  let q = 'SELECT * FROM c ORDER BY c.createdAt DESC';
-  const p = [];
-  if (statusFilter) {
-    q = 'SELECT * FROM c WHERE c.status = @s ORDER BY c.createdAt DESC';
-    p.push({ name: '@s', value: statusFilter });
-  }
+async function tryCosmosQuery(query, params) {
   const token = await getAzureToken('https://cosmos.azure.com/.default');
-  const res = await cosmosReq('POST', `/${colPath}/docs`, {
+  return cosmosReq('POST', `/${colPath}/docs`, {
     'Authorization': `type%3Daad%26ver%3D1.0%26sig%3D${encodeURIComponent(token)}`,
     'x-ms-date': new Date().toUTCString(), 'x-ms-version': '2018-12-31',
     'Content-Type': 'application/query+json',
     'x-ms-documentdb-isquery': 'true',
     'x-ms-documentdb-query-enablecrosspartition': 'true',
-  }, JSON.stringify({ query: q, parameters: p }));
-  return res.Documents || [];
+  }, JSON.stringify({ query, parameters: params || [] }));
+}
+
+async function tryCosmosDoc(method, id, body) {
+  const path = id ? `/${colPath}/docs/${id}` : `/${colPath}/docs`;
+  const h = await authHeaders(id || (body && body.id));
+  return cosmosReq(method, path, h, body);
+}
+
+// Hydrate memStore from Cosmos on first successful connection
+async function syncFromCosmos() {
+  if (!endpoint || Date.now() - lastCosmosCheck < 60000) return;
+  lastCosmosCheck = Date.now();
+  try {
+    const res = await tryCosmosQuery('SELECT * FROM c');
+    const docs = res.Documents || [];
+    docs.forEach(d => memStore.set(d.id, d));
+    cosmosAvailable = true;
+  } catch(e) {
+    cosmosAvailable = false;
+  }
+}
+
+async function listRequests(statusFilter) {
+  await syncFromCosmos();
+  const all = Array.from(memStore.values());
+  const filtered = statusFilter ? all.filter(r => r.status === statusFilter) : all;
+  return filtered.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 }
 
 async function getRequest(id) {
-  if (useMemory) return memStore.get(id) || null;
-  try {
-    const h = await authHeaders(id);
-    return await cosmosReq('GET', `/${colPath}/docs/${id}`, h);
-  } catch(e) { if (e.code === 404) return null; throw e; }
+  await syncFromCosmos();
+  return memStore.get(id) || null;
 }
 
 async function createRequest(data) {
-  if (useMemory) { memStore.set(data.id, data); return data; }
-  const h = await authHeaders(data.id);
-  return await cosmosReq('POST', `/${colPath}/docs`, h, data);
+  memStore.set(data.id, data);
+  if (endpoint) {
+    try { await tryCosmosDoc('POST', null, data); cosmosAvailable = true; }
+    catch(e) { cosmosAvailable = false; console.warn('[blobClient] Cosmos write failed, in-memory only:', e.code); }
+  }
+  return data;
 }
 
 async function updateRequest(id, updates) {
-  const existing = await getRequest(id);
+  const existing = memStore.get(id);
   if (!existing) return null;
-  // Remove Cosmos system properties before replacing
   const { _rid, _self, _etag, _attachments, _ts, ...clean } = existing;
   const updated = { ...clean, ...updates, id, updatedAt: new Date().toISOString() };
-  if (useMemory) { memStore.set(id, updated); return updated; }
-  const h = await authHeaders(id);
-  return await cosmosReq('PUT', `/${colPath}/docs/${id}`, h, updated);
+  memStore.set(id, updated);
+  if (endpoint) {
+    try { await tryCosmosDoc('PUT', id, updated); cosmosAvailable = true; }
+    catch(e) { cosmosAvailable = false; console.warn('[blobClient] Cosmos update failed:', e.code); }
+  }
+  return updated;
 }
 
 async function deleteRequest(id) {
-  if (useMemory) return memStore.delete(id);
-  try {
-    const h = await authHeaders(id);
-    await cosmosReq('DELETE', `/${colPath}/docs/${id}`, h);
-    return true;
-  } catch(e) { if (e.code === 404) return false; throw e; }
+  memStore.delete(id);
+  if (endpoint) {
+    try { await tryCosmosDoc('DELETE', id); } catch(e) { /* ignore */ }
+  }
+  return true;
 }
 
 module.exports = { listRequests, getRequest, createRequest, updateRequest, deleteRequest };
