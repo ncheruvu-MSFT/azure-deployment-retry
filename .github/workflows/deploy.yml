@@ -70,8 +70,9 @@ jobs:
           resourceGroupName: ${{ vars.RESOURCE_GROUP_NAME || 'rg-deploy-retry' }}
           template: infrastructure/main.bicep
           parameters: >
-            projectName=${{ vars.PROJECT_NAME || 'deploy-retry' }}
+            workloadName=${{ vars.WORKLOAD_NAME || 'deployretry' }}
+            environment=${{ vars.ENVIRONMENT || 'prod' }}
             retryIntervalMinutes=${{ vars.RETRY_INTERVAL || '10' }}
-            maxRetryAttempts=${{ vars.MAX_RETRY_ATTEMPTS || '144' }}
+            maxRetryAttempts=${{ vars.MAX_RETRY_ATTEMPTS || '432' }}
             notificationEmail=${{ vars.NOTIFICATION_EMAIL || '' }}
             teamsWebhookUrl=${{ secrets.TEAMS_WEBHOOK_URL || '' }}

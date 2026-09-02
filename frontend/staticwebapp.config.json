@@ -23,13 +23,15 @@
     {
       "route": "/api/*",
       "allowedRoles": [
-        "authenticated"
+        "authenticated",
+        "anonymous"
       ]
     },
     {
       "route": "/*",
       "allowedRoles": [
-        "authenticated"
+        "authenticated",
+        "anonymous"
       ]
     },
     {

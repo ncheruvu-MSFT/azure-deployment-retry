@@ -35,11 +35,14 @@ param (
 
     [string]$Location = 'eastus2',
 
-    [string]$ProjectName = 'deploy-retry',
+    [string]$WorkloadName = 'deployretry',
+
+    [ValidateSet('dev','test','staging','prod')]
+    [string]$Environment = 'prod',
 
     [int]$RetryIntervalMinutes = 10,
 
-    [int]$MaxRetryAttempts = 144,
+    [int]$MaxRetryAttempts = 432,
 
     [string]$NotificationEmail = '',
 
@@ -76,14 +79,15 @@ $deployParams = @{
     ResourceGroupName = $ResourceGroupName
     TemplateFile      = $templateFile
     location          = $Location
-    projectName       = $ProjectName
+    workloadName      = $WorkloadName
+    environment       = $Environment
     retryIntervalMinutes = $RetryIntervalMinutes
     maxRetryAttempts  = $MaxRetryAttempts
     notificationEmail = $NotificationEmail
     teamsWebhookUrl   = $TeamsWebhookUrl
 }
 
-$deployment = New-AzResourceGroupDeployment @deployParams -Name "deploy-retry-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+$deployment = New-AzResourceGroupDeployment @deployParams -Name "$WorkloadName-$Environment-infra"
 
 if ($deployment.ProvisioningState -ne 'Succeeded') {
     Write-Error "Deployment failed with state: $($deployment.ProvisioningState)"

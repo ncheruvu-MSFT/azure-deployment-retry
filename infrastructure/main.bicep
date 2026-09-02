@@ -13,8 +13,14 @@ targetScope = 'resourceGroup'
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
-@description('Project name used as a prefix for resource names.')
-param projectName string = 'deploy-retry'
+@description('Workload identifier for CAF naming (e.g. deployretry).')
+@minLength(2)
+@maxLength(15)
+param workloadName string = 'deployretry'
+
+@description('Environment abbreviation per CAF (dev, test, staging, prod).')
+@allowed(['dev', 'test', 'staging', 'prod'])
+param environment string = 'prod'
 
 @minValue(5)
 @maxValue(30)
@@ -31,20 +37,46 @@ param notificationEmail string = ''
 param teamsWebhookUrl string = ''
 
 // ---------------------------------------------------------------------------
-// Variables
+// Variables — CAF Naming Convention
+// https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming
+// Pattern: {resource-type}-{workload}-{environment}-{region}-{instance}
 // ---------------------------------------------------------------------------
 
-var uniqueSuffix = uniqueString(resourceGroup().id, projectName)
-var storageAccountName = toLower('${replace(projectName, '-', '')}${take(uniqueSuffix, 8)}')
-var logicAppName = '${projectName}-logic-${take(uniqueSuffix, 6)}'
-var swaName = '${projectName}-swa-${take(uniqueSuffix, 6)}'
+// Deterministic suffix from RG + workload — ensures idempotent deploys
+var uniqueSuffix = uniqueString(resourceGroup().id, workloadName, environment)
+var regionShort = {
+  eastus: 'eus'
+  eastus2: 'eus2'
+  westus2: 'wus2'
+  westus3: 'wus3'
+  centralus: 'cus'
+  northcentralus: 'ncus'
+  southcentralus: 'scus'
+  westeurope: 'weu'
+  northeurope: 'neu'
+  uksouth: 'uks'
+  southeastasia: 'sea'
+  australiaeast: 'aue'
+  japaneast: 'jpe'
+  koreacentral: 'krc'
+  canadacentral: 'cac'
+  swedencentral: 'swc'
+  switzerlandnorth: 'szn'
+  francecentral: 'frc'
+}
+var regionAbbr = contains(regionShort, location) ? regionShort[location] : take(location, 4)
+
+// CAF resource names — deterministic, won't change on redeploy
+var storageAccountName = toLower('st${workloadName}${environment}${take(uniqueSuffix, 6)}')
+var logicAppName = 'logic-${workloadName}-${environment}-${regionAbbr}'
+var swaName = 'stapp-${workloadName}-${environment}-${regionAbbr}'
 var blobContainerName = 'deployment-requests'
-var apiConnectionName = '${projectName}-blob-conn'
+var apiConnectionName = 'apic-blob-${workloadName}-${environment}-${regionAbbr}'
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var contributorRoleId = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
 var enableEmail = !empty(notificationEmail)
 var enableTeams = !empty(teamsWebhookUrl)
-var o365ConnectionName = '${projectName}-o365-conn'
+var o365ConnectionName = 'apic-o365-${workloadName}-${environment}-${regionAbbr}'
 
 // ---------------------------------------------------------------------------
 // Storage Account + Blob Container

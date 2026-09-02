@@ -88,9 +88,50 @@ module.exports = async function (context, req) {
     }
 
     const props = deployment.properties || {};
-    const templateContent = templateExport.template
-      ? JSON.stringify(templateExport.template, null, 2)
+    const template = templateExport.template || {};
+    const templateContent = template
+      ? JSON.stringify(template, null, 2)
       : JSON.stringify({ note: "Template export unavailable" });
+
+    // Extract region from: body override > deployment parameters > RG location > resource location
+    const resources = template.resources || [];
+    const firstResource = resources[0] || {};
+    let region = body.region
+      || (props.parameters?.location?.value)
+      || firstResource.location
+      || "unknown";
+
+    // If region is an ARM expression like [resourceGroup().location], resolve from RG
+    if (region.startsWith && region.startsWith("[")) {
+      try {
+        const rgInfo = await armRequest("GET",
+          `/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}?api-version=2021-04-01`, token);
+        region = rgInfo.location || "unknown";
+      } catch(e) { region = "unknown"; }
+    }
+
+    // Extract SKU from: body override > template resource SKU > model name
+    let vmSku = body.vmSku || "";
+    if (!vmSku) {
+      if (firstResource.sku?.name) {
+        vmSku = firstResource.sku.name;
+        if (firstResource.sku.capacity) vmSku += ` (${firstResource.sku.capacity})`;
+      }
+      if (firstResource.properties?.model?.name) {
+        vmSku = firstResource.properties.model.name;
+        if (firstResource.properties.model.version) vmSku += ` v${firstResource.properties.model.version}`;
+      }
+      if (firstResource.properties?.hardwareProfile?.vmSize) {
+        vmSku = firstResource.properties.hardwareProfile.vmSize;
+      }
+      if (!vmSku) vmSku = firstResource.type || "imported";
+    }
+
+    // Extract error details
+    const error = props.error || {};
+    const errorDetail = error.details?.[0] || {};
+    const errorCode = errorDetail.code || error.code || "";
+    const errorMessage = errorDetail.message || error.message || "";
 
     const now = new Date().toISOString();
     const id = uuidv4();
@@ -100,13 +141,13 @@ module.exports = async function (context, req) {
       deploymentName: deploymentName.trim(),
       subscriptionId: subscriptionId.trim(),
       resourceGroup: resourceGroup.trim(),
-      region: body.region || props.parameters?.location?.value || "unknown",
-      vmSku: body.vmSku || "imported",
+      region: region,
+      vmSku: vmSku,
       templateType: "arm",
       templateContent: templateContent,
       templateParameters: props.parameters || {},
       priority: body.priority || "normal",
-      notes: `Imported from failed deployment: ${deploymentName}`,
+      notes: `Imported from failed deployment: ${deploymentName}. Error: ${errorCode} — ${errorMessage.substring(0, 200)}`,
       notifyEmail: body.notifyEmail || "",
       notifyTeams: body.notifyTeams || "",
       status: "pending",

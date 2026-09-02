@@ -220,8 +220,8 @@
       <tr data-id="${escHtml(r.id)}">
         <td><code style="font-size:.82rem">${escHtml(truncate(r.id, 12))}</code></td>
         <td>${escHtml(r.vmSku ? 'GPU VM' : 'Resource')} <span class="badge badge-neutral" style="font-size:.72rem">${escHtml((r.templateType || 'arm').toUpperCase())}</span></td>
-        <td>${escHtml(r.targetRegion || '—')}</td>
-        <td><code>${escHtml(r.sku || '—')}</code></td>
+        <td>${escHtml(r.targetRegion || r.region || '—')}</td>
+        <td><code>${escHtml(r.sku || r.vmSku || '—')}</code></td>
         <td>${statusBadge(r.status)}</td>
         <td style="text-align:center">${r.attemptCount ?? 0}</td>
         <td title="${escHtml(r.createdAt || '')}">${relativeTime(r.createdAt)}</td>
@@ -347,8 +347,8 @@
           <dt>Deployment</dt><dd>${escHtml(r.deploymentName || '—')}</dd>
           <dt>Resource Group</dt><dd>${escHtml(r.resourceGroup || '—')}</dd>
           <dt>Subscription</dt><dd><code>${escHtml(r.subscriptionId || '—')}</code></dd>
-          <dt>Region</dt><dd>${escHtml(r.targetRegion || '—')}</dd>
-          <dt>SKU</dt><dd><code>${escHtml(r.sku || '—')}</code></dd>
+          <dt>Region</dt><dd>${escHtml(r.targetRegion || r.region || '—')}</dd>
+          <dt>SKU</dt><dd><code>${escHtml(r.sku || r.vmSku || '—')}</code></dd>
           <dt>Template Type</dt><dd>${escHtml(r.templateType || '—')}</dd>
           <dt>Priority</dt><dd>${escHtml(r.priority || 'normal')}</dd>
           ${r.notifyEmail ? `<dt>Email Notify</dt><dd>${escHtml(r.notifyEmail)}</dd>` : ''}
