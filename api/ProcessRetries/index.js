@@ -1,6 +1,7 @@
 const { listRequests, updateRequest } = require("../shared/blobClient");
 const { getAzureToken } = require("../shared/azureAuth");
 const { armRequest } = require("../shared/armClient");
+const { preFlightCheck } = require("../shared/quotaCheck");
 
 // Capacity error patterns — these get retried
 const CAPACITY_PATTERNS = [
@@ -72,6 +73,26 @@ module.exports = async function (context, req) {
         if (e.statusCode !== 404) {
           context.log.warn(`Failed to check deployment status for ${request.deploymentName}: ${e.message}`);
         }
+      }
+
+      // Pre-flight: check SKU availability and quota before attempting deployment
+      const preflight = await preFlightCheck(token, request.subscriptionId, request.region, request.vmSku);
+      if (!preflight.canRetry) {
+        const reasons = preflight.checks.filter(c => c.available === false || c.withinQuota === false).map(c => c.reason).join('; ');
+        attempt.result = "quota_blocked";
+        attempt.errorCode = "QuotaPreCheckFailed";
+        attempt.errorMessage = reasons;
+        const attempts = [...(request.attempts || []), attempt];
+        await updateRequest(request.id, {
+          status: "retrying",
+          attemptCount: attemptNumber,
+          lastAttemptAt: now,
+          attempts,
+          lastError: { code: "QuotaPreCheckFailed", message: `Skipped: ${reasons}` },
+          preflightChecks: preflight.checks,
+        });
+        results.skipped++;
+        continue;
       }
 
       // Attempt the deployment
