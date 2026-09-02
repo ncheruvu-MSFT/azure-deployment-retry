@@ -124,6 +124,51 @@ curl https://<your-swa>/api/requests
 
 **Non-capacity errors** (InvalidTemplate, AuthorizationFailed, etc.) → fail immediately, no retry.
 
+## GPU-Only Enforcement
+
+This platform is designed for **GPU VM deployments** (NC, ND, NV, NP families). Before each retry attempt, a pre-flight check runs:
+
+```
+Pre-flight Check Flow:
+  1. Is it a GPU SKU? (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)
+     └─ NO → BLOCK retry ("Only GPU VMs supported")
+  2. Is the GPU SKU available in the target region?
+     └─ Restricted → SKIP retry ("Request access at aka.ms/ProdportalCR")
+  3. Does the subscription have GPU vCPU quota?
+     └─ Quota full → SKIP retry ("Request quota increase")
+  4. All checks pass → PROCEED with ARM deployment
+```
+
+### Supported GPU Families
+
+| Family | SKUs | GPU | Use Case |
+|--------|------|-----|----------|
+| **NC** | NC6s_v3, NC12s_v3, NC24s_v3, NC24ads_A100_v4, etc. | V100, A100 | Training, inference |
+| **ND** | ND96asr_v4, ND96amsr_A100_v4, ND40rs_v2, etc. | A100, V100 | Large-scale training |
+| **NV** | NV12s_v3, NV24s_v3, etc. | T4, A10 | Visualization, inference |
+| **NP** | NP10s, NP20s, NP40s | Xilinx U250 | FPGA acceleration |
+
+### Quota Check API
+
+```bash
+# Check GPU SKU availability + quota before submitting
+GET /api/check-quota?subscriptionId=<sub>&region=<region>&vmSku=<sku>
+
+# Example response:
+{
+  "canRetry": true,
+  "summary": "Pre-flight passed: Standard_NC24ads_A100_v4 ready in eastus2",
+  "checks": [
+    { "check": "SKU Availability", "available": true,
+      "capabilities": { "vCPUs": "24", "gpus": "1", "memory": "220" } },
+    { "check": "GPU Quota", "withinQuota": true,
+      "checks": [
+        { "name": "Standard NC Family vCPUs", "usage": 0, "limit": 24, "available": 24 }
+      ]}
+  ]
+}
+```
+
 ## Retry Configuration
 
 | Setting | Options | Default |
