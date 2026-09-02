@@ -21,26 +21,19 @@
   },
   "routes": [
     {
-      "route": "/api/*",
-      "allowedRoles": [
-        "authenticated",
-        "anonymous"
-      ]
-    },
-    {
-      "route": "/*",
-      "allowedRoles": [
-        "authenticated",
-        "anonymous"
-      ]
-    },
-    {
       "route": "/.auth/login/github",
       "statusCode": 404
     },
     {
       "route": "/.auth/login/twitter",
       "statusCode": 404
+    },
+    {
+      "route": "/api/*",
+      "allowedRoles": [
+        "authenticated",
+        "anonymous"
+      ]
     }
   ],
   "responseOverrides": {
