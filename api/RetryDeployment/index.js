@@ -101,8 +101,8 @@ module.exports = async function (context, req) {
       || firstResource.location
       || "unknown";
 
-    // If region is an ARM expression like [resourceGroup().location], resolve from RG
-    if (region.startsWith && region.startsWith("[")) {
+    // If region is an ARM expression or still unknown, resolve from RG
+    if (!region || region === "unknown" || (region.startsWith && region.startsWith("["))) {
       try {
         const rgInfo = await armRequest("GET",
           `/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}?api-version=2021-04-01`, token);

@@ -99,19 +99,65 @@ module.exports = async function (context, req) {
           { properties: { mode: "Incremental", template: templateObj, parameters: request.templateParameters || {} } }
         );
 
-        // Deployment accepted — mark as succeeded (ARM accepted the request)
-        attempt.result = "succeeded";
-        const attempts = [...(request.attempts || []), attempt];
-        await updateRequest(request.id, {
-          status: "succeeded",
-          attemptCount: attemptNumber,
-          lastAttemptAt: now,
-          completedAt: now,
-          attempts,
-          lastError: null,
-        });
-        results.succeeded++;
+        // ARM accepted the request — poll for actual completion (up to 60s)
+        let finalState = "Running";
+        let pollError = null;
+        for (let poll = 0; poll < 6; poll++) {
+          await new Promise(r => setTimeout(r, 10000)); // wait 10s between polls
+          try {
+            const depStatus = await armRequest("GET",
+              `/subscriptions/${request.subscriptionId}/resourceGroups/${request.resourceGroup}/providers/Microsoft.Resources/deployments/${deploymentName}?api-version=2021-04-01`,
+              token);
+            finalState = depStatus.properties?.provisioningState || "Unknown";
+            if (finalState === "Succeeded" || finalState === "Failed" || finalState === "Canceled") {
+              if (finalState === "Failed") {
+                const depErr = depStatus.properties?.error || {};
+                pollError = {
+                  code: depErr.details?.[0]?.code || depErr.code || "DeploymentFailed",
+                  message: depErr.details?.[0]?.message || depErr.message || "Deployment failed"
+                };
+              }
+              break;
+            }
+          } catch(pollErr) { break; } // can't check status, treat as in-progress
+        }
 
+        if (finalState === "Succeeded") {
+          attempt.result = "succeeded";
+          const attempts = [...(request.attempts || []), attempt];
+          await updateRequest(request.id, {
+            status: "succeeded", attemptCount: attemptNumber, lastAttemptAt: now,
+            completedAt: new Date().toISOString(), attempts, lastError: null,
+          });
+          results.succeeded++;
+        } else if (finalState === "Failed" && pollError) {
+          const fullError = `${pollError.code}: ${pollError.message}`;
+          attempt.result = isCapacityError(fullError) ? "capacity_error" : "failed";
+          attempt.errorCode = pollError.code;
+          attempt.errorMessage = pollError.message.substring(0, 500);
+          const attempts = [...(request.attempts || []), attempt];
+          if (isCapacityError(fullError)) {
+            await updateRequest(request.id, {
+              status: "retrying", attemptCount: attemptNumber, lastAttemptAt: now,
+              attempts, lastError: pollError,
+            });
+            results.retried++;
+          } else {
+            await updateRequest(request.id, {
+              status: "failed", attemptCount: attemptNumber, lastAttemptAt: now,
+              completedAt: new Date().toISOString(), attempts, lastError: pollError,
+            });
+            results.failed++;
+          }
+        } else {
+          // Still running after 60s — mark as retrying, check next cycle
+          attempt.result = "in_progress";
+          const attempts = [...(request.attempts || []), attempt];
+          await updateRequest(request.id, {
+            status: "retrying", attemptCount: attemptNumber, lastAttemptAt: now, attempts,
+          });
+          results.retried++;
+        }
       } catch (deployErr) {
         const errMsg = deployErr.message || "";
         const errBody = deployErr.body?.error || {};
