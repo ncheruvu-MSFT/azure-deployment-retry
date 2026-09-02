@@ -25,7 +25,7 @@ jobs:
           node-version: '18'
 
       - name: Install API dependencies
-        run: cd api && npm ci
+        run: cd api && npm install
 
       - name: Deploy to SWA
         uses: Azure/static-web-apps-deploy@v1
