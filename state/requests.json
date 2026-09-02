@@ -14,12 +14,12 @@
     "notifyEmail": "",
     "notifyTeams": "",
     "status": "retrying",
-    "attemptCount": 4,
+    "attemptCount": 5,
     "maxAttempts": 432,
     "retryIntervalMinutes": 10,
     "createdAt": "2026-09-02T18:18:17.193Z",
-    "updatedAt": "2026-09-02T19:14:26.579Z",
-    "lastAttemptAt": "2026-09-02T19:14:15.339Z",
+    "updatedAt": "2026-09-02T19:32:54.246Z",
+    "lastAttemptAt": "2026-09-02T19:32:54.246Z",
     "completedAt": null,
     "attempts": [
       {
@@ -49,11 +49,25 @@
         "result": "capacity_error",
         "errorCode": "InsufficientQuota",
         "errorMessage": "This operation require 2000 new capacity in quota Tokens Per Minute (thousands) - 4.1 - Standard, which is bigger than the current available capacity 1000. The current quota usage is 0 and the quota limit is 1000 for quota Tokens Per Minute (thousands) - 4.1 - Standard."
+      },
+      {
+        "attemptNumber": 5,
+        "timestamp": "2026-09-02T19:32:54.246Z",
+        "result": "quota_blocked",
+        "errorCode": "QuotaPreCheckFailed",
+        "errorMessage": "gpt-4.1 v2025-04-14 is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
       }
     ],
     "lastError": {
-      "code": "InsufficientQuota",
-      "message": "This operation require 2000 new capacity in quota Tokens Per Minute (thousands) - 4.1 - Standard, which is bigger than the current available capacity 1000. The current quota usage is 0 and the quota limit is 1000 for quota Tokens Per Minute (thousands) - 4.1 - Standard."
-    }
+      "code": "QuotaPreCheckFailed",
+      "message": "Skipped: gpt-4.1 v2025-04-14 is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+    },
+    "preflightChecks": [
+      {
+        "check": "GPU SKU Required",
+        "available": false,
+        "reason": "gpt-4.1 v2025-04-14 is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+      }
+    ]
   }
 ]
