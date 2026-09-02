@@ -1,127 +1,125 @@
-// Cosmos DB REST client with AAD auth + resilient in-memory fallback
-// When Cosmos is unreachable (firewall/network), falls back to in-memory store
-// Data syncs to Cosmos when connectivity is restored
-const { getAzureToken } = require('./azureAuth');
+// Persistent state store using GitHub API
+// Writes state.json to the repo — survives all redeploys
 const https = require('https');
 
-const endpoint = process.env.COSMOS_ENDPOINT || '';
-const databaseId = process.env.COSMOS_DATABASE || 'deployretry';
-const containerId = process.env.COSMOS_CONTAINER || 'requests';
-const colPath = `dbs/${databaseId}/colls/${containerId}`;
+const GH_TOKEN = process.env.GITHUB_STATE_TOKEN;
+const GH_REPO = process.env.GITHUB_STATE_REPO || 'ncheruvu-MSFT/azure-deployment-retry';
+const GH_PATH = process.env.GITHUB_STATE_PATH || 'state/requests.json';
 
-// In-memory cache — always populated, synced with Cosmos when possible
-const memStore = new Map();
-let cosmosAvailable = !!endpoint;
-let lastCosmosCheck = 0;
+// In-memory cache
+let store = new Map();
+let lastSha = null;
+let loaded = false;
+let saving = false;
 
-function cosmosReq(method, path, headers, body) {
+function ghRequest(method, path, body) {
   return new Promise((resolve, reject) => {
-    if (!endpoint) return reject(new Error('COSMOS_ENDPOINT not set'));
-    const url = new URL(path, endpoint);
-    const opts = { hostname: url.hostname, port: 443, path: url.pathname, method, headers };
+    const opts = {
+      hostname: 'api.github.com', port: 443, method,
+      path: `/repos/${GH_REPO}/contents/${path}`,
+      headers: {
+        'Authorization': `token ${GH_TOKEN}`,
+        'User-Agent': 'deploy-retry-platform',
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      }
+    };
     const req = https.request(opts, (res) => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
         try {
           const json = data ? JSON.parse(data) : {};
-          if (res.statusCode >= 400) {
-            const err = new Error(json.message || data.substring(0, 300));
+          if (res.statusCode >= 400 && res.statusCode !== 404) {
+            const err = new Error(json.message || `GitHub ${res.statusCode}`);
             err.code = res.statusCode;
             reject(err);
-          } else resolve(json);
-        } catch(e) { reject(new Error(`Parse: ${data.substring(0, 200)}`)); }
+          } else resolve({ status: res.statusCode, body: json });
+        } catch(e) { reject(e); }
       });
     });
     req.on('error', reject);
-    req.setTimeout(10000, () => { req.destroy(new Error('timeout')); });
-    if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body));
+    req.setTimeout(15000, () => req.destroy(new Error('timeout')));
+    if (body) req.write(JSON.stringify(body));
     req.end();
   });
 }
 
-async function authHeaders(partitionKey) {
-  const token = await getAzureToken('https://cosmos.azure.com/.default');
-  const h = {
-    'Authorization': `type%3Daad%26ver%3D1.0%26sig%3D${encodeURIComponent(token)}`,
-    'x-ms-date': new Date().toUTCString(),
-    'x-ms-version': '2018-12-31',
-    'Content-Type': 'application/json',
-  };
-  if (partitionKey !== undefined) h['x-ms-documentdb-partitionkey'] = `["${partitionKey}"]`;
-  return h;
-}
-
-async function tryCosmosQuery(query, params) {
-  const token = await getAzureToken('https://cosmos.azure.com/.default');
-  return cosmosReq('POST', `/${colPath}/docs`, {
-    'Authorization': `type%3Daad%26ver%3D1.0%26sig%3D${encodeURIComponent(token)}`,
-    'x-ms-date': new Date().toUTCString(), 'x-ms-version': '2018-12-31',
-    'Content-Type': 'application/query+json',
-    'x-ms-documentdb-isquery': 'true',
-    'x-ms-documentdb-query-enablecrosspartition': 'true',
-  }, JSON.stringify({ query, parameters: params || [] }));
-}
-
-async function tryCosmosDoc(method, id, body) {
-  const path = id ? `/${colPath}/docs/${id}` : `/${colPath}/docs`;
-  const h = await authHeaders(id || (body && body.id));
-  return cosmosReq(method, path, h, body);
-}
-
-// Hydrate memStore from Cosmos on first successful connection
-async function syncFromCosmos() {
-  if (!endpoint || Date.now() - lastCosmosCheck < 60000) return;
-  lastCosmosCheck = Date.now();
+async function loadFromGitHub() {
+  if (loaded || !GH_TOKEN) return;
   try {
-    const res = await tryCosmosQuery('SELECT * FROM c');
-    const docs = res.Documents || [];
-    docs.forEach(d => memStore.set(d.id, d));
-    cosmosAvailable = true;
+    const { status, body } = await ghRequest('GET', GH_PATH);
+    if (status === 200 && body.content) {
+      const json = Buffer.from(body.content, 'base64').toString('utf8');
+      const items = JSON.parse(json);
+      items.forEach(item => store.set(item.id, item));
+      lastSha = body.sha;
+      loaded = true;
+    } else if (status === 404) {
+      loaded = true; // file doesn't exist yet, start empty
+    }
   } catch(e) {
-    cosmosAvailable = false;
+    console.warn('[state] GitHub load failed:', e.message);
+    loaded = true; // don't retry every request
+  }
+}
+
+async function saveToGitHub() {
+  if (!GH_TOKEN || saving) return;
+  saving = true;
+  try {
+    const items = Array.from(store.values());
+    const content = Buffer.from(JSON.stringify(items, null, 2)).toString('base64');
+    const body = {
+      message: `Update state: ${items.length} requests`,
+      content,
+      committer: { name: 'Deploy Retry Bot', email: 'bot@deploy-retry.azure' },
+    };
+    if (lastSha) body.sha = lastSha;
+    const { status, body: resp } = await ghRequest('PUT', GH_PATH, body);
+    if (status === 200 || status === 201) {
+      lastSha = resp.content?.sha;
+    }
+  } catch(e) {
+    console.warn('[state] GitHub save failed:', e.message);
+  } finally {
+    saving = false;
   }
 }
 
 async function listRequests(statusFilter) {
-  await syncFromCosmos();
-  const all = Array.from(memStore.values());
+  await loadFromGitHub();
+  const all = Array.from(store.values());
   const filtered = statusFilter ? all.filter(r => r.status === statusFilter) : all;
   return filtered.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 }
 
 async function getRequest(id) {
-  await syncFromCosmos();
-  return memStore.get(id) || null;
+  await loadFromGitHub();
+  return store.get(id) || null;
 }
 
 async function createRequest(data) {
-  memStore.set(data.id, data);
-  if (endpoint) {
-    try { await tryCosmosDoc('POST', null, data); cosmosAvailable = true; }
-    catch(e) { cosmosAvailable = false; console.warn('[blobClient] Cosmos write failed, in-memory only:', e.code); }
-  }
+  await loadFromGitHub();
+  store.set(data.id, data);
+  await saveToGitHub();
   return data;
 }
 
 async function updateRequest(id, updates) {
-  const existing = memStore.get(id);
+  await loadFromGitHub();
+  const existing = store.get(id);
   if (!existing) return null;
-  const { _rid, _self, _etag, _attachments, _ts, ...clean } = existing;
-  const updated = { ...clean, ...updates, id, updatedAt: new Date().toISOString() };
-  memStore.set(id, updated);
-  if (endpoint) {
-    try { await tryCosmosDoc('PUT', id, updated); cosmosAvailable = true; }
-    catch(e) { cosmosAvailable = false; console.warn('[blobClient] Cosmos update failed:', e.code); }
-  }
+  const updated = { ...existing, ...updates, id, updatedAt: new Date().toISOString() };
+  store.set(id, updated);
+  await saveToGitHub();
   return updated;
 }
 
 async function deleteRequest(id) {
-  memStore.delete(id);
-  if (endpoint) {
-    try { await tryCosmosDoc('DELETE', id); } catch(e) { /* ignore */ }
-  }
+  await loadFromGitHub();
+  store.delete(id);
+  await saveToGitHub();
   return true;
 }
 
