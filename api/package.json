@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=16"
+  },
+  "name": "deployment-retry-api",
+  "dependencies": {
+    "uuid": "^9.0.0"
+  },
+  "private": true
+}

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Azure Deployment Retry Platform</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <!-- ===== Header ===== -->
+  <header class="app-header">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M13.05 4.24 6.56 18.05a.5.5 0 0 0 .44.75h7.65L13.05 4.24Z" fill="#50e6ff"/><path d="m13.05 4.24 5.93 8.03-5.34 6.53h7.01a.5.5 0 0 0 .41-.79L13.05 4.24Z" fill="#fff"/><path d="M3.72 15.3a.5.5 0 0 0 .02.59l3.54 4.86h6.37l-4.49-9.08L3.72 15.3Z" fill="#fff" opacity=".8"/></svg>
+    <h1>Azure Deployment Retry Platform</h1>
+    <span class="header-subtitle" id="clock"></span>
+    <span class="user-info" id="userInfo"></span>
+    <a href="/.auth/logout" class="btn btn-ghost btn-sm" id="logoutBtn" style="color:#fff;display:none">Sign out</a>
+  </header>
+
+  <!-- ===== Tabs ===== -->
+  <nav class="tab-bar" role="tablist">
+    <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
+    <button class="tab-btn" data-tab="import-failed" role="tab" aria-selected="false">Import Failed</button>
+    <button class="tab-btn" data-tab="new-request" role="tab" aria-selected="false">New Request</button>
+  </nav>
+
+  <!-- ===== Dashboard Tab ===== -->
+  <section id="tab-dashboard" class="tab-content active">
+    <div class="main-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>Deployment Requests</h2>
+          <div class="toolbar">
+            <select id="filterStatus" class="form-control" style="width:auto">
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="retrying">Retrying</option>
+              <option value="succeeded">Succeeded</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <label class="toggle-wrap">
+              <input type="checkbox" class="toggle" id="autoRefresh" checked />
+              Auto-refresh
+            </label>
+            <button class="btn btn-outline btn-sm" id="btnRefresh">⟳ Refresh</button>
+          </div>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table" id="requestsTable">
+            <thead>
+              <tr>
+                <th data-sort="id">ID <span class="sort-icon">⇅</span></th>
+                <th data-sort="resourceType">Resource Type <span class="sort-icon">⇅</span></th>
+                <th data-sort="targetRegion">Region <span class="sort-icon">⇅</span></th>
+                <th data-sort="sku">SKU <span class="sort-icon">⇅</span></th>
+                <th data-sort="status">Status <span class="sort-icon">⇅</span></th>
+                <th data-sort="attemptCount">Attempts <span class="sort-icon">⇅</span></th>
+                <th data-sort="createdAt">Created <span class="sort-icon">⇅</span></th>
+                <th data-sort="lastAttemptAt">Last Attempt <span class="sort-icon">⇅</span></th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="requestsBody"></tbody>
+          </table>
+        </div>
+        <!-- States -->
+        <div id="loadingState" class="state-msg" style="display:none">
+          <div class="spinner"></div>
+          <p style="margin-top:12px">Loading deployment requests…</p>
+        </div>
+        <div id="emptyState" class="state-msg" style="display:none">
+          <div class="icon">📋</div>
+          <p>No deployment requests yet</p>
+          <p class="sub">Click <strong>New Request</strong> to submit your first GPU deployment.</p>
+        </div>
+        <div id="errorState" class="state-msg" style="display:none">
+          <div class="icon">⚠️</div>
+          <p>Failed to load requests</p>
+          <p class="sub" id="errorDetail"></p>
+          <button class="btn btn-outline btn-sm" style="margin-top:12px" id="btnRetryLoad">Retry</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Import Failed Tab ===== -->
+  <section id="tab-import-failed" class="tab-content">
+    <div class="main-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>Import Failed Deployments from Azure</h2>
+        </div>
+        <div class="card-body">
+          <!-- Step 1: Subscription & RG selection -->
+          <div class="form-row">
+            <div class="form-group">
+              <label for="importSubId">Subscription ID *</label>
+              <span class="hint">GUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</span>
+              <input type="text" id="importSubId" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" />
+            </div>
+            <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
+              <button type="button" class="btn btn-outline" id="btnLoadRgs">📂 Load Resource Groups</button>
+            </div>
+          </div>
+
+          <div class="form-row" id="rgSelectRow" style="display:none">
+            <div class="form-group">
+              <label for="importRgSelect">Resource Group</label>
+              <select id="importRgSelect" class="form-control">
+                <option value="">Select a resource group…</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
+              <button type="button" class="btn btn-primary" id="btnLoadFailed">🔍 Load Failed Deployments</button>
+            </div>
+          </div>
+
+          <!-- Loading / empty / error states -->
+          <div id="importLoadingState" class="state-msg" style="display:none">
+            <div class="spinner"></div>
+            <p style="margin-top:12px">Querying Azure Resource Manager…</p>
+          </div>
+          <div id="importEmptyState" class="state-msg" style="display:none">
+            <div class="icon">✅</div>
+            <p>No failed deployments found</p>
+            <p class="sub">All deployments in this resource group are healthy.</p>
+          </div>
+          <div id="importErrorState" class="state-msg" style="display:none">
+            <div class="icon">⚠️</div>
+            <p>Failed to query Azure</p>
+            <p class="sub" id="importErrorDetail"></p>
+          </div>
+
+          <!-- Results table -->
+          <div class="data-table-wrap" id="failedTableWrap" style="display:none">
+            <table class="data-table" id="failedTable">
+              <thead>
+                <tr>
+                  <th>Deployment Name</th>
+                  <th>Timestamp</th>
+                  <th>Error Code</th>
+                  <th>Error Message</th>
+                  <th>Correlation ID</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="failedBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== New Request Tab ===== -->
+  <section id="tab-new-request" class="tab-content">
+    <div class="main-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>Submit New Deployment Request</h2>
+        </div>
+        <div class="card-body">
+          <form id="newRequestForm" novalidate>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="deploymentName">Deployment Name *</label>
+                <input type="text" id="deploymentName" class="form-control" placeholder="e.g. gpu-training-eastus" required />
+                <span class="error-msg">Deployment name is required.</span>
+              </div>
+              <div class="form-group">
+                <label for="resourceGroup">Resource Group *</label>
+                <input type="text" id="resourceGroup" class="form-control" placeholder="e.g. rg-ml-prod" required />
+                <span class="error-msg">Resource group is required (alphanumeric, hyphens, underscores, periods).</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="subscriptionId">Subscription ID *</label>
+                <span class="hint">GUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</span>
+                <input type="text" id="subscriptionId" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" required />
+                <span class="error-msg">Enter a valid GUID.</span>
+              </div>
+              <div class="form-group">
+                <label for="targetRegion">Target Region *</label>
+                <select id="targetRegion" class="form-control" required>
+                  <option value="">Select a region…</option>
+                  <option value="eastus">East US</option>
+                  <option value="eastus2">East US 2</option>
+                  <option value="westus2">West US 2</option>
+                  <option value="westus3">West US 3</option>
+                  <option value="southcentralus">South Central US</option>
+                  <option value="northcentralus">North Central US</option>
+                  <option value="centralus">Central US</option>
+                  <option value="westeurope">West Europe</option>
+                  <option value="northeurope">North Europe</option>
+                  <option value="uksouth">UK South</option>
+                  <option value="southeastasia">Southeast Asia</option>
+                  <option value="australiaeast">Australia East</option>
+                  <option value="japaneast">Japan East</option>
+                  <option value="koreacentral">Korea Central</option>
+                  <option value="canadacentral">Canada Central</option>
+                  <option value="swedencentral">Sweden Central</option>
+                  <option value="switzerlandnorth">Switzerland North</option>
+                  <option value="francecentral">France Central</option>
+                </select>
+                <span class="error-msg">Please select a region.</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="vmSku">VM SKU *</label>
+                <select id="vmSku" class="form-control" required>
+                  <option value="">Select a GPU SKU…</option>
+                  <optgroup label="NCv3 (V100)">
+                    <option value="Standard_NC6s_v3">Standard_NC6s_v3</option>
+                    <option value="Standard_NC12s_v3">Standard_NC12s_v3</option>
+                    <option value="Standard_NC24s_v3">Standard_NC24s_v3</option>
+                    <option value="Standard_NC24rs_v3">Standard_NC24rs_v3</option>
+                  </optgroup>
+                  <optgroup label="NCasT4_v3 (T4)">
+                    <option value="Standard_NC4as_T4_v3">Standard_NC4as_T4_v3</option>
+                    <option value="Standard_NC8as_T4_v3">Standard_NC8as_T4_v3</option>
+                    <option value="Standard_NC16as_T4_v3">Standard_NC16as_T4_v3</option>
+                    <option value="Standard_NC64as_T4_v3">Standard_NC64as_T4_v3</option>
+                  </optgroup>
+                  <optgroup label="ND (A100)">
+                    <option value="Standard_ND96asr_v4">Standard_ND96asr_v4</option>
+                    <option value="Standard_ND96amsr_A100_v4">Standard_ND96amsr_A100_v4</option>
+                    <option value="Standard_NC24ads_A100_v4">Standard_NC24ads_A100_v4</option>
+                    <option value="Standard_NC48ads_A100_v4">Standard_NC48ads_A100_v4</option>
+                    <option value="Standard_NC96ads_A100_v4">Standard_NC96ads_A100_v4</option>
+                  </optgroup>
+                  <optgroup label="ND (V100 32G)">
+                    <option value="Standard_ND40rs_v2">Standard_ND40rs_v2</option>
+                  </optgroup>
+                </select>
+                <span class="error-msg">Please select a VM SKU.</span>
+              </div>
+              <div class="form-group">
+                <label for="priority">Priority</label>
+                <select id="priority" class="form-control">
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Template Type *</label>
+              <div class="radio-group">
+                <label><input type="radio" name="templateType" value="arm" checked /> ARM JSON</label>
+                <label><input type="radio" name="templateType" value="bicep" /> Bicep</label>
+                <label><input type="radio" name="templateType" value="terraform" /> Terraform</label>
+              </div>
+            </div>
+
+            <div id="templateHelp" class="hint-block" style="margin-top:4px;margin-bottom:var(--space-m)">
+              <span id="helpArm" class="template-hint">Paste a standard ARM JSON template with <code>$schema</code>, <code>resources</code>, and <code>parameters</code>.</span>
+              <span id="helpBicep" class="template-hint" style="display:none">Paste Bicep source. It will be compiled to ARM before deployment.</span>
+              <span id="helpTerraform" class="template-hint" style="display:none">Paste HCL (<code>.tf</code>) content. Deployed via Azure Container Instance running <code>terraform apply</code>. Ensure the AzureRM provider block is included.</span>
+            </div>
+
+            <div class="form-group">
+              <label for="templateContent">Template Content *</label>
+              <span class="hint">Paste your ARM / Bicep / Terraform template, or upload a file.</span>
+              <textarea id="templateContent" class="form-control code-editor" rows="12" placeholder='{ "$schema": "https://schema.management.azure.com/..." }' required></textarea>
+              <div class="file-upload-row">
+                <button type="button" class="btn btn-ghost btn-sm" id="btnUploadTemplate">📁 Upload file…</button>
+                <span class="file-name" id="uploadedFileName"></span>
+                <input type="file" id="templateFile" accept=".json,.bicep,.tf,.arm" hidden />
+              </div>
+              <span class="error-msg">Template content is required.</span>
+            </div>
+
+            <div class="form-group">
+              <label for="templateParams">Template Parameters <span style="font-weight:400;color:var(--text-secondary)">(JSON, optional)</span></label>
+              <textarea id="templateParams" class="form-control code-editor" rows="6" placeholder='{ "vmName": { "value": "myGpuVM" } }'></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="notes">Notes <span style="font-weight:400;color:var(--text-secondary)">(optional)</span></label>
+              <textarea id="notes" class="form-control" rows="3" placeholder="Any additional context for this deployment…"></textarea>
+            </div>
+
+            <div class="expandable form-section" style="margin-top:var(--space-l)">
+              <button class="expand-toggle" type="button">
+                <span class="arrow">▶</span> Notification Settings (optional)
+              </button>
+              <div class="expand-body" style="padding-top:var(--space-m)">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="notifyEmail">Email Notification</label>
+                    <span class="hint">Receive email when deployment succeeds or fails</span>
+                    <input type="email" id="notifyEmail" class="form-control" placeholder="team@company.com" />
+                  </div>
+                  <div class="form-group">
+                    <label for="notifyTeams">Teams Webhook URL</label>
+                    <span class="hint">Post to a Teams channel via Incoming Webhook</span>
+                    <input type="url" id="notifyTeams" class="form-control" placeholder="https://outlook.office.com/webhook/..." />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:var(--space-xl)">
+              <button type="reset" class="btn btn-ghost">Clear</button>
+              <button type="submit" class="btn btn-primary" id="btnSubmit">🚀 Submit Request</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Detail Modal ===== -->
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Request Details</h2>
+        <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Populated by JS -->
+      </div>
+      <div class="modal-footer" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <!-- ===== Toast Container ===== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

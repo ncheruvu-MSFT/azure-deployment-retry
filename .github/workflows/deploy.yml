@@ -1,0 +1,77 @@
+name: Deploy to Azure Static Web Apps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main]
+
+permissions:
+  id-token: write   # Required for federated identity
+  contents: read
+
+jobs:
+  build-and-deploy:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    runs-on: ubuntu-latest
+    name: Build and Deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install API dependencies
+        run: cd api && npm ci
+
+      - name: Deploy to SWA
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: frontend
+          api_location: api
+          output_location: frontend
+          api_build_command: ""
+
+  close-pr:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    name: Close PR staging
+    steps:
+      - name: Close staging environment
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+          action: close
+
+  deploy-infra:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    name: Deploy Infrastructure
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (Federated Identity)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep
+        uses: azure/arm-deploy@v2
+        with:
+          resourceGroupName: ${{ vars.RESOURCE_GROUP_NAME || 'rg-deploy-retry' }}
+          template: infrastructure/main.bicep
+          parameters: >
+            projectName=${{ vars.PROJECT_NAME || 'deploy-retry' }}
+            retryIntervalMinutes=${{ vars.RETRY_INTERVAL || '10' }}
+            maxRetryAttempts=${{ vars.MAX_RETRY_ATTEMPTS || '144' }}
+            notificationEmail=${{ vars.NOTIFICATION_EMAIL || '' }}
+            teamsWebhookUrl=${{ secrets.TEAMS_WEBHOOK_URL || '' }}
