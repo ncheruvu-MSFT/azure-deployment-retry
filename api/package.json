@@ -4,8 +4,5 @@
     "node": ">=16"
   },
   "name": "deployment-retry-api",
-  "dependencies": {
-    "uuid": "^14.0.2"
-  },
   "private": true
 }
