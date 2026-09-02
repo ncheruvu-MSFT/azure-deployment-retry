@@ -56,6 +56,9 @@
     importErrorDetail: $('#importErrorDetail'),
     failedTableWrap: $('#failedTableWrap'),
     failedBody:      $('#failedBody'),
+    importRetryConfig: $('#importRetryConfig'),
+    importMaxRetries: $('#importMaxRetries'),
+    importRetryInterval: $('#importRetryInterval'),
   };
 
   // ------------------------------------------------------------------
@@ -354,7 +357,8 @@
           ${r.notifyEmail ? `<dt>Email Notify</dt><dd>${escHtml(r.notifyEmail)}</dd>` : ''}
           ${r.notifyTeams ? `<dt>Teams Notify</dt><dd>Configured ✓</dd>` : ''}
           <dt>Status</dt><dd>${statusBadge(r.status)}</dd>
-          <dt>Attempts</dt><dd>${r.attemptCount ?? 0}</dd>
+          <dt>Attempts</dt><dd>${r.attemptCount ?? 0} / ${r.maxAttempts === 0 ? '∞ (Forever)' : (r.maxAttempts || 432)}</dd>
+          <dt>Retry Frequency</dt><dd>${r.retryIntervalMinutes === 0 ? 'Immediately' : `Every ${r.retryIntervalMinutes || 10} minutes`}</dd>
           <dt>Created</dt><dd>${fmtDate(r.createdAt)}</dd>
           <dt>Last Attempt</dt><dd>${fmtDate(r.lastAttemptAt)}</dd>
           ${r.notes ? `<dt>Notes</dt><dd>${escHtml(r.notes)}</dd>` : ''}
@@ -564,6 +568,8 @@
       notes:           $('#notes').value.trim() || null,
       notifyEmail:     $('#notifyEmail')?.value?.trim() || '',
       notifyTeams:     $('#notifyTeams')?.value?.trim() || '',
+      maxAttempts:     $('#maxRetries').value === 'custom' ? (parseInt($('#maxRetriesCustom').value) || 432) : (parseInt($('#maxRetries').value) || 0),
+      retryIntervalMinutes: parseInt($('#retryInterval').value) || 10,
     };
 
     // Try to parse templateParams as JSON if provided
@@ -603,6 +609,7 @@
     dom.importEmpty.style.display = state === 'empty' ? '' : 'none';
     dom.importError.style.display = state === 'error' ? '' : 'none';
     dom.failedTableWrap.style.display = state === 'data' ? '' : 'none';
+    dom.importRetryConfig.style.display = state === 'data' ? '' : 'none';
   }
 
   // Pre-fill subscription from any existing request (runs after initial load)
@@ -702,7 +709,8 @@
               subscriptionId: depSub,
               resourceGroup: depRg,
               deploymentName: depName,
-              retryIntervalMinutes: 10,
+              maxAttempts: parseInt(dom.importMaxRetries.value) || 0,
+              retryIntervalMinutes: parseInt(dom.importRetryInterval.value) || 10,
             });
             toast(`Retry request created for "${depName}".`, 'success');
             switchTab('dashboard');
@@ -740,6 +748,16 @@
     } catch(e) { /* not authenticated or auth disabled */ }
   }
 
+  // Custom retries dropdown toggle
+  const maxRetriesSelect = $('#maxRetries');
+  const maxRetriesCustom = $('#maxRetriesCustom');
+  if (maxRetriesSelect) {
+    maxRetriesSelect.addEventListener('change', () => {
+      maxRetriesCustom.style.display = maxRetriesSelect.value === 'custom' ? '' : 'none';
+    });
+  }
+
+  // Show retry config in detail modal
   loadRequests();
   startAutoRefresh();
   loadUserInfo();

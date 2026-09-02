@@ -116,6 +116,34 @@
             </div>
           </div>
 
+          <!-- Retry configuration for imported deployments -->
+          <div class="form-row" id="importRetryConfig" style="display:none;margin-bottom:var(--space-l)">
+            <div class="form-group">
+              <label for="importMaxRetries">Max Retries</label>
+              <select id="importMaxRetries" class="form-control">
+                <option value="0">Forever (until cancelled)</option>
+                <option value="6">6 (1 hour)</option>
+                <option value="12">12 (2 hours)</option>
+                <option value="36">36 (6 hours)</option>
+                <option value="144">144 (24 hours)</option>
+                <option value="432" selected>432 (3 days)</option>
+                <option value="1008">1008 (7 days)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="importRetryInterval">Retry Frequency</label>
+              <select id="importRetryInterval" class="form-control">
+                <option value="0">Immediately</option>
+                <option value="5">Every 5 minutes</option>
+                <option value="10" selected>Every 10 minutes</option>
+                <option value="15">Every 15 minutes</option>
+                <option value="20">Every 20 minutes</option>
+                <option value="30">Every 30 minutes</option>
+                <option value="60">Every 1 hour</option>
+              </select>
+            </div>
+          </div>
+
           <!-- Loading / empty / error states -->
           <div id="importLoadingState" class="state-msg" style="display:none">
             <div class="spinner"></div>
@@ -245,6 +273,37 @@
                 <select id="priority" class="form-control">
                   <option value="normal">Normal</option>
                   <option value="high">High</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="maxRetries">Max Retries</label>
+                <span class="hint">How many times to retry before giving up</span>
+                <select id="maxRetries" class="form-control">
+                  <option value="0">Forever (until manually cancelled)</option>
+                  <option value="6">6 (1 hour at 10 min)</option>
+                  <option value="12">12 (2 hours at 10 min)</option>
+                  <option value="36">36 (6 hours at 10 min)</option>
+                  <option value="144">144 (24 hours at 10 min)</option>
+                  <option value="432" selected>432 (3 days at 10 min)</option>
+                  <option value="1008">1008 (7 days at 10 min)</option>
+                  <option value="custom">Custom…</option>
+                </select>
+                <input type="number" id="maxRetriesCustom" class="form-control" min="1" max="10000" placeholder="Enter number" style="display:none;margin-top:4px" />
+              </div>
+              <div class="form-group">
+                <label for="retryInterval">Retry Frequency</label>
+                <span class="hint">How often to check and retry</span>
+                <select id="retryInterval" class="form-control">
+                  <option value="0">Immediately (no wait between retries)</option>
+                  <option value="5">Every 5 minutes</option>
+                  <option value="10" selected>Every 10 minutes</option>
+                  <option value="15">Every 15 minutes</option>
+                  <option value="20">Every 20 minutes</option>
+                  <option value="30">Every 30 minutes</option>
+                  <option value="60">Every 1 hour</option>
                 </select>
               </div>
             </div>
