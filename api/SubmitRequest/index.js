@@ -135,7 +135,7 @@ module.exports = async function (context, req) {
     context.res = {
       status: 500,
       headers: { "Content-Type": "application/json" },
-      body: { error: "Internal server error. Failed to create request." },
+      body: { error: "Failed to create request.", detail: (err.message || "").substring(0, 500) },
     };
   }
 };
