@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "id": "6dbe1429-b3e5-4991-aec9-5503c70b62ff",
+    "deploymentName": "gpt41-eastus-quota-test",
+    "subscriptionId": "31613fe0-1e9b-4a97-b771-dc48fbaa0fbb",
+    "resourceGroup": "rg-hrb-demo",
+    "region": "eastus",
+    "vmSku": "gpt-4.1 v2025-04-14",
+    "templateType": "arm",
+    "templateContent": "{\n  \"$schema\": \"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#\",\n  \"contentVersion\": \"1.0.0.0\",\n  \"resources\": [\n    {\n      \"type\": \"Microsoft.CognitiveServices/accounts/deployments\",\n      \"apiVersion\": \"2024-10-01\",\n      \"name\": \"hrbdemo-aoai-ykadgxnd3p43o/gpt41-eastus-retry-test\",\n      \"sku\": {\n        \"name\": \"Standard\",\n        \"capacity\": 2000\n      },\n      \"properties\": {\n        \"model\": {\n          \"format\": \"OpenAI\",\n          \"name\": \"gpt-4.1\",\n          \"version\": \"2025-04-14\"\n        }\n      }\n    }\n  ]\n}",
+    "templateParameters": {},
+    "priority": "normal",
+    "notes": "Imported from failed deployment: gpt41-eastus-quota-test. Error: InsufficientQuota — This operation require 2000 new capacity in quota Tokens Per Minute (thousands) - 4.1 - Standard, which is bigger than the current available capacity 1000. The current quota usage is 0 and the quota l",
+    "notifyEmail": "",
+    "notifyTeams": "",
+    "status": "pending",
+    "attemptCount": 0,
+    "maxAttempts": 432,
+    "retryIntervalMinutes": 10,
+    "createdAt": "2026-09-02T18:18:17.193Z",
+    "updatedAt": "2026-09-02T18:18:17.193Z",
+    "lastAttemptAt": null,
+    "completedAt": null,
+    "attempts": [],
+    "lastError": null
+  }
+]
