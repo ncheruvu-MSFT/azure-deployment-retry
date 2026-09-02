@@ -75,6 +75,11 @@ module.exports = async function (context, req) {
         }
       }
 
+      // Attempt the deployment
+      const attemptNumber = (request.attemptCount || 0) + 1;
+      const now = new Date().toISOString();
+      const attempt = { attemptNumber, timestamp: now, result: null, errorCode: null, errorMessage: null };
+
       // Pre-flight: check SKU availability and quota before attempting deployment
       const preflight = await preFlightCheck(token, request.subscriptionId, request.region, request.vmSku);
       if (!preflight.canRetry) {
@@ -94,11 +99,6 @@ module.exports = async function (context, req) {
         results.skipped++;
         continue;
       }
-
-      // Attempt the deployment
-      const attemptNumber = (request.attemptCount || 0) + 1;
-      const now = new Date().toISOString();
-      const attempt = { attemptNumber, timestamp: now, result: null, errorCode: null, errorMessage: null };
 
       try {
         let templateObj;
