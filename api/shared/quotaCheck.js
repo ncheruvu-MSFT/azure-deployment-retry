@@ -1,15 +1,41 @@
-// Quota pre-check before retrying deployments
-// Checks VM SKU availability and compute/AI quota in the target region
+// Quota pre-check for GPU VM deployments
+// Checks SKU availability + vCPU quota for GPU families (NC, ND, NV, NP)
 const { armRequest } = require('./armClient');
 
+// GPU VM family mappings
+const GPU_FAMILIES = {
+  nc:  { prefix: 'nc',  quotaName: 'Standard NC Family vCPUs' },
+  ncs: { prefix: 'ncs', quotaName: 'Standard NCSv3 Family vCPUs' },
+  nds: { prefix: 'nds', quotaName: 'Standard NDSv2 Family vCPUs' },
+  nd:  { prefix: 'nd',  quotaName: 'Standard ND Family vCPUs' },
+  nv:  { prefix: 'nv',  quotaName: 'Standard NV Family vCPUs' },
+  np:  { prefix: 'np',  quotaName: 'Standard NP Family vCPUs' },
+};
+
+function isGpuSku(vmSku) {
+  if (!vmSku) return false;
+  const lower = vmSku.toLowerCase();
+  return lower.startsWith('standard_nc') || lower.startsWith('standard_nd') ||
+         lower.startsWith('standard_nv') || lower.startsWith('standard_np');
+}
+
+function getGpuFamily(vmSku) {
+  if (!vmSku) return null;
+  const lower = vmSku.toLowerCase().replace('standard_', '');
+  // Match most specific first: ncs, nds, then nc, nd, nv, np
+  if (lower.startsWith('nc')) return 'nc';
+  if (lower.startsWith('nd')) return 'nd';
+  if (lower.startsWith('nv')) return 'nv';
+  if (lower.startsWith('np')) return 'np';
+  return null;
+}
+
 /**
- * Check if a VM SKU is available in the target region.
- * Returns { available, reason } — if not available, reason explains why.
+ * Check if a GPU SKU is available in the target region (not restricted).
  */
 async function checkSkuAvailability(token, subscriptionId, region, vmSku) {
-  if (!vmSku || vmSku === 'imported' || vmSku.includes('gpt-') || vmSku.includes('OpenAI')) {
-    // AI model deployments — skip VM SKU check, use quota check instead
-    return { available: true, reason: 'AI model — SKU check not applicable' };
+  if (!isGpuSku(vmSku)) {
+    return { available: true, reason: `${vmSku || 'Unknown'} is not a GPU SKU — skipping availability check` };
   }
 
   try {
@@ -21,45 +47,57 @@ async function checkSkuAvailability(token, subscriptionId, region, vmSku) {
     const match = skus.find(s => s.name && s.name.toLowerCase() === vmSku.toLowerCase());
 
     if (!match) {
-      return { available: false, reason: `SKU ${vmSku} not found in region ${region}` };
+      return { available: false, reason: `GPU SKU ${vmSku} not found in ${region}. Try a different region or SKU.` };
     }
 
-    // Check restrictions
+    // Check for location restrictions (NotAvailableForSubscription)
     const restrictions = match.restrictions || [];
-    const zoneRestrictions = restrictions.filter(r => r.type === 'Zone');
-    const locationRestrictions = restrictions.filter(r => r.type === 'Location');
-
-    if (locationRestrictions.length > 0) {
-      const restrictedRegions = locationRestrictions.flatMap(r => r.restrictionInfo?.locations || []);
-      if (restrictedRegions.some(loc => loc.toLowerCase() === region.toLowerCase())) {
-        return { available: false, reason: `SKU ${vmSku} is restricted in region ${region}. Request quota increase.` };
+    for (const r of restrictions) {
+      if (r.type === 'Location') {
+        const locs = (r.restrictionInfo?.locations || []).map(l => l.toLowerCase());
+        if (locs.includes(region.toLowerCase())) {
+          const reasonCode = r.reasonCode || 'Restricted';
+          return {
+            available: false,
+            reason: `GPU SKU ${vmSku} is ${reasonCode} in ${region}. ` +
+              (reasonCode === 'NotAvailableForSubscription'
+                ? 'Request access at https://aka.ms/ProdportalCR'
+                : 'Try a different region.'),
+            reasonCode,
+          };
+        }
       }
     }
 
+    // Check zone restrictions
+    const zoneRestrictions = restrictions.filter(r => r.type === 'Zone');
+    const zoneNote = zoneRestrictions.length > 0
+      ? `(some zones restricted: ${zoneRestrictions.flatMap(r => r.restrictionInfo?.zones || []).join(', ')})`
+      : '(all zones available)';
+
     return {
       available: true,
-      reason: `SKU ${vmSku} available in ${region}`,
-      zones: zoneRestrictions.length > 0 ? 'Some availability zones restricted' : 'All zones available',
+      reason: `GPU SKU ${vmSku} available in ${region} ${zoneNote}`,
+      capabilities: {
+        vCPUs: match.capabilities?.find(c => c.name === 'vCPUs')?.value,
+        gpus: match.capabilities?.find(c => c.name === 'GPUs')?.value,
+        memory: match.capabilities?.find(c => c.name === 'MemoryGB')?.value,
+      },
     };
   } catch (e) {
-    // Can't check — allow retry anyway
-    return { available: true, reason: `SKU check failed: ${e.message}. Proceeding with retry.`, warning: true };
+    return { available: true, reason: `SKU check failed: ${(e.message || '').substring(0, 100)}. Proceeding.`, warning: true };
   }
 }
 
 /**
- * Check compute quota usage for the VM family in the target region.
- * Returns { withinQuota, usage, limit, reason }
+ * Check GPU vCPU quota usage in the target region.
  */
-async function checkComputeQuota(token, subscriptionId, region, vmSku) {
-  if (!vmSku || vmSku === 'imported') {
-    return { withinQuota: true, reason: 'No SKU specified — skipping quota check' };
+async function checkGpuQuota(token, subscriptionId, region, vmSku) {
+  if (!isGpuSku(vmSku)) {
+    return { withinQuota: true, reason: `${vmSku || 'Unknown'} is not a GPU SKU — skipping quota check` };
   }
 
-  // AI model deployments — check Cognitive Services quota
-  if (vmSku.includes('gpt-') || vmSku.includes('OpenAI') || vmSku.includes('Standard')) {
-    return checkAIQuota(token, subscriptionId, region, vmSku);
-  }
+  const family = getGpuFamily(vmSku);
 
   try {
     const result = await armRequest('GET',
@@ -67,122 +105,102 @@ async function checkComputeQuota(token, subscriptionId, region, vmSku) {
       token);
 
     const usages = result.value || [];
+    const checks = [];
 
-    // Map VM SKU prefix to quota family name
-    const skuLower = vmSku.toLowerCase();
-    let familyFilter = '';
-    if (skuLower.includes('nc')) familyFilter = 'NC';
-    else if (skuLower.includes('nd')) familyFilter = 'ND';
-    else if (skuLower.includes('nv')) familyFilter = 'NV';
-    else if (skuLower.includes('np')) familyFilter = 'NP';
-
-    // Find matching quota entries
-    const matches = usages.filter(u => {
+    // 1. Check GPU family-specific quota
+    const familyQuota = usages.find(u => {
       const name = (u.name?.localizedValue || u.name?.value || '').toLowerCase();
-      return familyFilter && name.includes(familyFilter.toLowerCase());
+      return family && (
+        name.includes(family.toLowerCase() + ' ') ||
+        name.includes(family.toLowerCase() + 's') ||
+        name.includes(family.toUpperCase())
+      );
     });
 
-    if (matches.length === 0) {
-      // Also check total regional vCPU quota
-      const totalQuota = usages.find(u =>
-        (u.name?.value || '').toLowerCase() === 'cores' ||
-        (u.name?.localizedValue || '').toLowerCase().includes('total regional')
-      );
-
-      if (totalQuota) {
-        const usage = totalQuota.currentValue || 0;
-        const limit = totalQuota.limit || 0;
+    if (familyQuota) {
+      const usage = familyQuota.currentValue || 0;
+      const limit = familyQuota.limit || 0;
+      checks.push({
+        name: familyQuota.name?.localizedValue || `${family.toUpperCase()} Family`,
+        usage, limit,
+        available: limit - usage,
+        sufficient: limit > usage,
+      });
+      if (limit <= usage) {
         return {
-          withinQuota: limit > usage,
+          withinQuota: false,
           usage, limit,
-          quotaName: totalQuota.name?.localizedValue || 'Total Regional vCPUs',
-          reason: limit > usage
-            ? `Regional vCPU quota: ${usage}/${limit} used`
-            : `Regional vCPU quota exhausted: ${usage}/${limit}. Request increase before retrying.`,
+          quotaName: familyQuota.name?.localizedValue,
+          reason: `${familyQuota.name?.localizedValue}: quota full (${usage}/${limit} vCPUs). ` +
+            `Request increase at https://aka.ms/ProdportalCR before retrying.`,
+          checks,
         };
       }
-      return { withinQuota: true, reason: `No specific quota found for ${vmSku} family. Proceeding.`, warning: true };
     }
 
-    // Report the most relevant match
-    const best = matches[0];
-    const usage = best.currentValue || 0;
-    const limit = best.limit || 0;
-
-    return {
-      withinQuota: limit > usage,
-      usage, limit,
-      quotaName: best.name?.localizedValue || best.name?.value,
-      reason: limit > usage
-        ? `${best.name?.localizedValue}: ${usage}/${limit} vCPUs used`
-        : `${best.name?.localizedValue}: quota full (${usage}/${limit}). Request increase at https://aka.ms/ProdportalCR`,
-    };
-  } catch (e) {
-    return { withinQuota: true, reason: `Quota check failed: ${e.message}. Proceeding.`, warning: true };
-  }
-}
-
-/**
- * Check AI/Cognitive Services quota for model deployments.
- */
-async function checkAIQuota(token, subscriptionId, region, modelInfo) {
-  try {
-    // List Cognitive Services accounts in the subscription to find the right one
-    const accounts = await armRequest('GET',
-      `/subscriptions/${subscriptionId}/providers/Microsoft.CognitiveServices/accounts?api-version=2024-10-01`,
-      token);
-
-    const aiAccounts = (accounts.value || []).filter(a =>
-      a.location?.toLowerCase() === region?.toLowerCase() &&
-      (a.kind === 'OpenAI' || a.kind === 'AIServices')
+    // 2. Check total regional vCPU quota
+    const totalQuota = usages.find(u =>
+      (u.name?.value || '').toLowerCase() === 'cores' ||
+      (u.name?.localizedValue || '').toLowerCase().includes('total regional')
     );
 
-    if (aiAccounts.length === 0) {
-      return { withinQuota: true, reason: `No OpenAI/AI accounts in ${region}. Quota check skipped.`, warning: true };
+    if (totalQuota) {
+      const usage = totalQuota.currentValue || 0;
+      const limit = totalQuota.limit || 0;
+      checks.push({
+        name: 'Total Regional vCPUs',
+        usage, limit,
+        available: limit - usage,
+        sufficient: limit > usage,
+      });
+      if (limit <= usage) {
+        return {
+          withinQuota: false,
+          usage, limit,
+          quotaName: 'Total Regional vCPUs',
+          reason: `Regional vCPU quota exhausted (${usage}/${limit}). Request increase before retrying.`,
+          checks,
+        };
+      }
     }
 
-    // Check deployments on the first matching account
-    const account = aiAccounts[0];
-    const accountName = account.name;
-    const rg = account.id.split('/resourceGroups/')[1]?.split('/')[0];
-
-    const deployments = await armRequest('GET',
-      `/subscriptions/${subscriptionId}/resourceGroups/${rg}/providers/Microsoft.CognitiveServices/accounts/${accountName}/deployments?api-version=2024-10-01`,
-      token);
-
-    const totalCapacity = (deployments.value || []).reduce((sum, d) => sum + (d.sku?.capacity || 0), 0);
-
+    // Quota looks good
+    const summary = checks.map(c => `${c.name}: ${c.usage}/${c.limit}`).join(', ');
     return {
       withinQuota: true,
-      usage: totalCapacity,
-      quotaName: `${accountName} total TPM`,
-      reason: `AI account ${accountName}: ${totalCapacity} TPM deployed. Check model-specific quotas in Azure Portal.`,
-      warning: true,
+      reason: `GPU quota available. ${summary}`,
+      checks,
     };
   } catch (e) {
-    return { withinQuota: true, reason: `AI quota check failed: ${e.message}. Proceeding.`, warning: true };
+    return { withinQuota: true, reason: `Quota check failed: ${(e.message || '').substring(0, 100)}. Proceeding.`, warning: true };
   }
 }
 
 /**
- * Full pre-flight check before retrying a deployment.
- * Returns { canRetry, checks[] }
+ * Full pre-flight check for GPU VM deployment.
+ * Returns { canRetry, checks[], summary }
  */
 async function preFlightCheck(token, subscriptionId, region, vmSku) {
   const checks = [];
 
-  // 1. SKU availability
+  // 1. GPU SKU availability in region
   const skuCheck = await checkSkuAvailability(token, subscriptionId, region, vmSku);
-  checks.push({ name: 'SKU Availability', ...skuCheck });
+  checks.push({ check: 'SKU Availability', ...skuCheck });
 
-  // 2. Quota usage
-  const quotaCheck = await checkComputeQuota(token, subscriptionId, region, vmSku);
-  checks.push({ name: 'Quota', ...quotaCheck });
+  // 2. GPU vCPU quota
+  const quotaCheck = await checkGpuQuota(token, subscriptionId, region, vmSku);
+  checks.push({ check: 'GPU Quota', ...quotaCheck });
 
-  // Can retry if SKU is available (or unknown) and quota allows it
   const canRetry = (skuCheck.available !== false) && (quotaCheck.withinQuota !== false);
+  const blockers = checks.filter(c => c.available === false || c.withinQuota === false);
 
-  return { canRetry, checks };
+  return {
+    canRetry,
+    summary: canRetry
+      ? `Pre-flight passed: ${vmSku} ready in ${region}`
+      : `Blocked: ${blockers.map(b => b.reason).join('; ')}`,
+    checks,
+  };
 }
 
-module.exports = { preFlightCheck, checkSkuAvailability, checkComputeQuota };
+module.exports = { preFlightCheck, checkSkuAvailability, checkGpuQuota, isGpuSku };
