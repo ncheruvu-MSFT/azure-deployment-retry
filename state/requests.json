@@ -69,5 +69,11 @@
         "reason": "gpt-4.1 v2025-04-14 is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
       }
     ]
+  },
+  {
+    "id": "test-local",
+    "deploymentName": "local-test",
+    "status": "pending",
+    "createdAt": "2026-09-02T19:43:03.183Z"
   }
 ]
