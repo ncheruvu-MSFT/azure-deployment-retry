@@ -1,188 +1,202 @@
 # Azure Deployment Retry Platform
 
-Automated retry system for Azure deployments that fail due to **GPU/capacity constraints**. Submit deployment requests via a web UI, and a Logic App retries every 10–15 minutes until the region has capacity.
+Self-service portal to automatically retry Azure deployments that fail due to **capacity constraints** (GPU VMs, AI models, region quotas). Import failed deployments from any subscription, configure retry settings, and let the platform retry every 10 minutes until capacity is available — up to 3 days.
 
-## Architecture
+**Live Demo**: [https://proud-pebble-07440280f.5.azurestaticapps.net](https://proud-pebble-07440280f.5.azurestaticapps.net)
+
+## How It Works
 
 ```
-┌────────────────────┐       ┌──────────────────────┐       ┌──────────────────┐
-│  Static Web App    │──────▶│  Azure Functions API  │──────▶│  Blob Storage    │
-│  (Dashboard UI)    │◀──────│  (CRUD on requests)   │◀──────│  (Request JSONs) │
-└────────────────────┘       └──────────────────────┘       └────────┬─────────┘
-                                                                     │
-                                                            ┌────────▼─────────┐
-                                                            │  Logic App       │
-                                                            │  (Recurrence     │
-                                                            │   every 10 min)  │
-                                                            │                  │
-                                                            │  • Read pending  │
-                                                            │  • PUT ARM API   │
-                                                            │  • Detect error  │
-                                                            │  • Update blob   │
-                                                            └──────────────────┘
+┌─────────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
+│  Static Web App     │────▶│  Azure Functions API  │────▶│  State Store     │
+│  (Dashboard + SSO)  │◀────│  (7 endpoints)        │◀────│  (Persistent)    │
+└─────────────────────┘     └──────────────────────┘     └────────┬─────────┘
+                                       │                          │
+                              ┌────────▼─────────┐    ┌──────────▼────────┐
+                              │  ARM REST API     │    │  Logic App        │
+                              │  (Deploy + Poll)  │    │  (Every 10 min)   │
+                              │  (Status Check)   │    │  → ProcessRetries │
+                              └──────────────────┘    └───────────────────┘
 ```
 
-## Components
-
-| Folder | What | Tech |
-|--------|------|------|
-| `frontend/` | SWA dashboard — submit requests, view status, cancel | Vanilla HTML/CSS/JS, Fluent theme |
-| `api/` | Azure Functions — CRUD endpoints for deployment requests | Node.js v4, `@azure/storage-blob` |
-| `infrastructure/` | Bicep IaC — SWA, Storage, Logic App, Managed Identity | Bicep, PowerShell |
-
-## Request Lifecycle
-
-1. **Submit** → User fills form (deployment name, subscription, RG, region, GPU SKU, template type + content)
-2. **Pending** → API writes JSON blob to `deployment-requests` container
-3. **Retrying** → Logic App fires every 10 min, routes by template type:
-   - **ARM/Bicep** → ARM REST API `PUT` deployment
-   - **Terraform** → Azure Container Instance with `terraform apply`
-4. **Capacity error detection** → Matches: `AllocationFailed`, `SkuNotAvailable`, `InsufficientCapacity`, `QuotaExceeded`, `OverconstrainedAllocationRequest`
-5. **Succeeded** → Blob updated → Teams/email notification → visible in dashboard
-6. **Failed** → Non-capacity error OR max attempts (144 = 24h) exceeded → notification sent → stops retrying
-
-## Notifications
-
-Notifications are **optional** and configurable per-deployment or globally via Bicep parameters.
-
-| Channel | How to Enable | What You Get |
-|---------|---------------|--------------|
-| **Teams** | Provide an [Incoming Webhook URL](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook) | Adaptive Card posted on success or failure with deployment name, region, attempt count, error summary |
-| **Email** | Provide an email address (uses Office 365 Outlook connector) | HTML email on success (Normal priority) or failure (High priority) with full details |
-
-Configure globally in `deploy.ps1`:
-```powershell
-.\deploy.ps1 -ResourceGroupName "rg-deploy-retry" -Location "eastus2" `
-  -NotificationEmail "platform-team@contoso.com" `
-  -TeamsWebhookUrl "https://outlook.office.com/webhook/..."
-```
-
-Or per-request via the UI's **Notification Settings** section on the submit form.
-
-## Terraform Support
-
-Terraform templates are deployed via **Azure Container Instance** (ACI):
-
-1. Logic App detects `templateType == 'terraform'` in the request blob
-2. Creates an ACI (`hashicorp/terraform:latest`) in the target resource group
-3. Writes template content to `main.tf`, parameters to `terraform.tfvars.json`
-4. Runs `terraform init && terraform apply -auto-approve`
-5. Polls ACI status every 30 seconds (up to 30 minutes)
-6. On completion: checks container logs for capacity errors → retries or marks failed
-7. Cleans up the ACI container group
-
-> **Note**: For production, assign a **user-assigned managed identity** to the ACI with appropriate RBAC on target resources. The ACI uses `ARM_USE_MSI=true` for the AzureRM Terraform provider.
-
-## Quickstart
+## Quickstart — Deploy in 5 Minutes
 
 ### Prerequisites
+- Azure CLI (`az`) logged in with Contributor role
+- Node.js 18+
+- GitHub account (for CI/CD)
 
-- Azure CLI (`az`) logged in
-- Contributor role on target subscription
-- Node.js 18+ (for local API development)
+### Step 1: Clone and Deploy Infrastructure
 
-### Deploy Infrastructure
+```bash
+git clone https://github.com/ncheruvu-MSFT/azure-deployment-retry.git
+cd azure-deployment-retry/infrastructure
 
-```powershell
-cd infrastructure
-
-# Basic deploy (no notifications)
+# Deploy all Azure resources (SWA, Storage, Logic App, Managed Identity)
 .\deploy.ps1 -ResourceGroupName "rg-deploy-retry" -Location "eastus2"
-
-# With notifications
-.\deploy.ps1 -ResourceGroupName "rg-deploy-retry" -Location "eastus2" `
-  -NotificationEmail "team@contoso.com" `
-  -TeamsWebhookUrl "https://outlook.office.com/webhook/..."
 ```
 
-This deploys:
-- **Static Web App** (Free tier)
-- **Storage Account** with `deployment-requests` container
-- **Logic App** (Consumption) with 10-minute recurrence + notification actions
-- **Managed Identity** with Contributor on RG + Storage Blob Data Contributor
-- **Office 365 API Connection** (if email notification enabled)
-- **Teams Webhook integration** (if webhook URL provided)
+### Step 2: Deploy the App
 
-### Deploy Frontend + API to SWA
+**Option A — GitHub Actions (recommended)**:
+```bash
+# Fork the repo, then set this secret in your fork:
+# Settings → Secrets → Actions → New:
+#   SWA_DEPLOYMENT_TOKEN = <from Azure Portal → SWA → Manage deployment token>
 
-```powershell
-# Install SWA CLI
+# Every push to main auto-deploys via .github/workflows/deploy.yml
+```
+
+**Option B — CLI**:
+```bash
 npm install -g @azure/static-web-apps-cli
-
-# From project root
-swa deploy --app-location frontend --api-location api \
-  --deployment-token <YOUR_SWA_DEPLOYMENT_TOKEN>
-```
-
-Get the deployment token from the Azure Portal → Static Web App → Manage deployment token.
-
-### Configure API Environment
-
-In the Azure Portal, add these **Application Settings** to the Static Web App:
-
-| Setting | Value |
-|---------|-------|
-| `STORAGE_CONNECTION_STRING` | Connection string from the deployed storage account |
-| `STORAGE_CONTAINER_NAME` | `deployment-requests` |
-
-### Local Development
-
-```powershell
-# Install API dependencies
 cd api && npm install && cd ..
 
-# Run locally with SWA CLI
-swa start frontend --api-location api
+swa deploy --output-location frontend --api-location api \
+  --deployment-token <YOUR_TOKEN> --env production \
+  --api-language node --api-version 18
 ```
 
-Set `STORAGE_CONNECTION_STRING` in `api/local.settings.json` for local blob access.
+### Step 3: Configure App Settings
+
+In the Azure Portal → Static Web App → Configuration → Application Settings:
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `AZURE_TENANT_ID` | Your Entra ID tenant | ARM API authentication |
+| `AZURE_CLIENT_ID` | Service principal app ID | ARM API authentication |
+| `AZURE_CLIENT_SECRET` | SP secret (or use federated identity) | ARM API authentication |
+
+The SP needs **Contributor** role on the subscription for ARM deployments.
+
+### Step 4: Wire the Logic App
+
+Update the Logic App to call the ProcessRetries API:
+```bash
+# The Logic App triggers every 10 min and calls:
+# POST https://<your-swa>.azurestaticapps.net/api/process-retries
+```
+
+## How to Retry a Failed Deployment
+
+### Method 1: Import from Azure (Recommended)
+
+1. Open the app → **Import Failed** tab
+2. Enter your **Subscription ID** → click **Load Resource Groups**
+3. Select a Resource Group → click **Load Failed Deployments**
+4. Configure: **Max Retries** (Forever, 6, 12, 36, 144, 432, 1008, Custom) and **Retry Frequency** (5/10/15/20/30/60 min)
+5. Click **Retry** on any failed deployment
+6. Switch to **Dashboard** → watch status update from Pending → Retrying → Succeeded/Failed
+
+### Method 2: Submit New Request
+
+1. Open the app → **New Request** tab
+2. Fill in: Deployment Name, Resource Group, Subscription, Region, GPU SKU
+3. Paste your ARM/Bicep/Terraform template
+4. Configure retry settings (max retries + frequency)
+5. Click **Submit** → the platform retries until capacity is available
+
+### Method 3: API (Programmatic)
+
+```bash
+# Import a failed deployment for retry
+curl -X POST https://<your-swa>/api/retry-deployment \
+  -H "Content-Type: application/json" \
+  -d '{"subscriptionId":"<sub>","resourceGroup":"<rg>","deploymentName":"<name>","maxAttempts":432,"retryIntervalMinutes":10}'
+
+# Trigger retry processing manually
+curl -X POST https://<your-swa>/api/process-retries
+
+# Check status
+curl https://<your-swa>/api/requests
+```
+
+## Capacity Errors Detected (Auto-Retry)
+
+| Error Code | Description |
+|------------|-------------|
+| `AllocationFailed` | Region has no capacity for the requested VM size |
+| `SkuNotAvailable` | Requested SKU not available in the region |
+| `InsufficientCapacity` | Not enough capacity in the region |
+| `InsufficientQuota` | Subscription quota exceeded for the resource |
+| `QuotaExceeded` | Resource quota limit reached |
+| `OverconstrainedAllocationRequest` | Constraints too strict for available capacity |
+
+**Non-capacity errors** (InvalidTemplate, AuthorizationFailed, etc.) → fail immediately, no retry.
+
+## Retry Configuration
+
+| Setting | Options | Default |
+|---------|---------|---------|
+| **Max Retries** | Forever (∞), 6, 12, 36, 144, 432, 1008, Custom | 432 (3 days) |
+| **Retry Frequency** | Immediately, 5, 10, 15, 20, 30, 60 min | 10 min |
+
+### Overlap Protection
+- Skips retry if previous attempt was less than `retryInterval` ago
+- Checks if an ARM deployment is still Running/Accepted before submitting a new one
+- Polls deployment status for 60 seconds after submission to detect async failures
+
+## Authentication
+
+| Component | Auth Method |
+|-----------|------------|
+| **UI (all pages)** | Entra ID SSO (SWA built-in) |
+| **API endpoints** | Anonymous (for Logic App access) |
+| **ARM operations** | Service Principal with Contributor |
+| **Crawling** | Blocked (robots.txt + noindex headers) |
+
+For SSO on SWA Standard tier, see `CUSTOMER_DEPLOYMENT_GUIDE.md`.
 
 ## API Endpoints
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| `GET` | `/api/requests?status=` | List all requests (optional status filter) |
-| `GET` | `/api/requests/{id}` | Get full request detail |
-| `POST` | `/api/requests` | Submit new deployment request |
+| `GET` | `/api/requests` | List all retry requests (optional `?status=` filter) |
+| `GET` | `/api/requests/{id}` | Get full request detail with attempt history |
+| `POST` | `/api/requests` | Submit a new deployment retry request |
 | `PUT` | `/api/requests/{id}/cancel` | Cancel a pending/retrying request |
+| `GET` | `/api/failed-deployments` | Browse failed deployments from ARM (`?subscriptionId=&resourceGroup=`) |
+| `POST` | `/api/retry-deployment` | Import a failed deployment for retry |
+| `POST` | `/api/process-retries` | Process all pending retries (called by Logic App) |
 
-## GPU SKUs Supported (Initial)
+## Cost Estimate
 
-| SKU | GPU | Use Case |
-|-----|-----|----------|
-| `Standard_NC*s_v3` | V100 | Training, inference |
-| `Standard_NC*as_T4_v3` | T4 | Inference, graphics |
-| `Standard_ND96asr_v4` | A100 (8x) | Large-scale training |
-| `Standard_ND96amsr_A100_v4` | A100 (8x) | Large-scale training |
-| `Standard_NC*ads_A100_v4` | A100 (1-4x) | Training, fine-tuning |
-
-## Customization
-
-- **Retry interval**: Change `retryIntervalMinutes` param in Bicep (default: 10, range: 5–30)
-- **Max attempts**: Change `maxRetryAttempts` param (default: 144 = 24h at 10-min intervals)
-- **Add resource types**: Extend the UI dropdowns and Logic App error patterns
-- **Notifications**: Add an email/Teams connector action in the Logic App after success/final failure
+| Resource | SKU | Monthly Cost |
+|----------|-----|-------------|
+| Static Web App | Free | **$0** |
+| Logic App (Consumption) | Per-execution | **~$3–5** |
+| Storage/Cosmos (Serverless) | Pay-per-use | **~$1–5** |
+| **Total** | | **~$4–10/month** |
 
 ## File Structure
 
 ```
 azure-deployment-retry/
+├── .github/workflows/deploy.yml    # CI/CD pipeline
 ├── frontend/
-│   ├── index.html                  # SPA dashboard
-│   ├── css/styles.css              # Fluent-inspired theme
-│   ├── js/app.js                   # Client-side logic
-│   └── staticwebapp.config.json    # SWA routing
+│   ├── index.html                  # SPA (Dashboard, Import Failed, New Request)
+│   ├── css/styles.css              # Purple gradient theme
+│   ├── js/app.js                   # Client logic
+│   ├── staticwebapp.config.json    # Auth + routing
+│   └── robots.txt                  # noindex/nofollow
 ├── api/
-│   ├── package.json
-│   ├── host.json
-│   ├── local.settings.json
-│   ├── shared/blobClient.js        # Blob storage helpers
-│   ├── SubmitRequest/              # POST /api/requests
+│   ├── shared/
+│   │   ├── blobClient.js           # State store (GitHub/Cosmos/Blob)
+│   │   ├── azureAuth.js            # AAD token (federated + secret)
+│   │   └── armClient.js            # ARM REST client
 │   ├── GetRequests/                # GET  /api/requests
 │   ├── GetRequest/                 # GET  /api/requests/{id}
-│   └── CancelRequest/             # PUT  /api/requests/{id}/cancel
-└── infrastructure/
-    ├── main.bicep                  # All Azure resources
-    ├── main.bicepparam             # Default parameters
-    └── deploy.ps1                  # Deployment script
+│   ├── SubmitRequest/              # POST /api/requests
+│   ├── CancelRequest/              # PUT  /api/requests/{id}/cancel
+│   ├── FailedDeployments/          # GET  /api/failed-deployments
+│   ├── RetryDeployment/            # POST /api/retry-deployment
+│   └── ProcessRetries/             # POST /api/process-retries
+├── infrastructure/
+│   ├── main.bicep                  # All Azure resources (CAF naming)
+│   ├── main.bicepparam             # Default parameters
+│   └── deploy.ps1                  # Deployment script
+├── state/requests.json             # Persistent state file
+├── CUSTOMER_DEPLOYMENT_GUIDE.md    # Full deployment + auth + cost guide
+├── LICENSE                         # MIT
+└── README.md
 ```
