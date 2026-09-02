@@ -111,7 +111,7 @@ module.exports = async function (context, req) {
       notifyTeams: body.notifyTeams || "",
       status: "pending",
       attemptCount: 0,
-      maxAttempts: body.maxAttempts || 144,
+      maxAttempts: body.maxAttempts || 432,
       retryIntervalMinutes: retryIntervalMinutes || 10,
       createdAt: now,
       updatedAt: now,

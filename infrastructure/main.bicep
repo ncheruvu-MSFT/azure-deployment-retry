@@ -21,8 +21,8 @@ param projectName string = 'deploy-retry'
 @description('Minutes between retry attempts.')
 param retryIntervalMinutes int = 10
 
-@description('Maximum number of retry attempts (144 ≈ 24 h at 10-min intervals).')
-param maxRetryAttempts int = 144
+@description('Maximum number of retry attempts (432 ≈ 3 days at 10-min intervals).')
+param maxRetryAttempts int = 432
 
 @description('Email address to receive deployment notifications (leave empty to disable email).')
 param notificationEmail string = ''
