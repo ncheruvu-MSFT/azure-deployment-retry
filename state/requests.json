@@ -34,15 +34,33 @@
     "notes": "Imported from failed deployment: hrb-demo-1778687678. Error: ConflictError — A conflict occurred that prevented the operation from completing. The operation failed because the Key Vault '' changed from the point the operation began. This can happen if parallel operations are b",
     "notifyEmail": "",
     "notifyTeams": "",
-    "status": "pending",
-    "attemptCount": 0,
+    "status": "retrying",
+    "attemptCount": 1,
     "maxAttempts": 432,
     "retryIntervalMinutes": 10,
     "createdAt": "2026-09-08T16:32:30.724Z",
-    "updatedAt": "2026-09-08T16:32:30.724Z",
-    "lastAttemptAt": null,
+    "updatedAt": "2026-09-08T16:40:10.858Z",
+    "lastAttemptAt": "2026-09-08T16:40:10.858Z",
     "completedAt": null,
-    "attempts": [],
-    "lastError": null
+    "attempts": [
+      {
+        "attemptNumber": 1,
+        "timestamp": "2026-09-08T16:40:10.858Z",
+        "result": "quota_blocked",
+        "errorCode": "QuotaPreCheckFailed",
+        "errorMessage": "Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+      }
+    ],
+    "lastError": {
+      "code": "QuotaPreCheckFailed",
+      "message": "Skipped: Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+    },
+    "preflightChecks": [
+      {
+        "check": "GPU SKU Required",
+        "available": false,
+        "reason": "Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+      }
+    ]
   }
 ]
