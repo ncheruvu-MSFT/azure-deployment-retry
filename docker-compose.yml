@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # Azure Functions API + Frontend
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: deployment-retry-app
+    ports:
+      - "7071:7071"  # Functions host
+      - "3000:3000"  # Optional: if you add a separate frontend dev server
+    environment:
+      # Required Azure settings — update these for your deployment
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-62c0cb46-1fcc-4c79-ba1b-d7d9fdfbaa68}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-b5fd325c-2a69-40bd-bb31-06d0d3a501a4}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:?Error: AZURE_CLIENT_SECRET not set}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-31613fe0-1e9b-4a97-b771-dc48fbaa0fbb}
+      
+      # Cosmos DB settings
+      COSMOS_ENDPOINT: ${COSMOS_ENDPOINT:-https://localhost:8081}
+      COSMOS_DATABASE: ${COSMOS_DATABASE:-deployretry}
+      COSMOS_CONTAINER: ${COSMOS_CONTAINER:-requests}
+      
+      # Functions runtime
+      FUNCTIONS_WORKER_RUNTIME: node
+      AzureWebJobsStorage: UseDevelopmentStorage=true
+      
+    volumes:
+      # Mount api source for live reload during development
+      - ./api:/app/api:cached
+      - ./frontend:/app/api/public:ro
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7071/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    
+    networks:
+      - deployment-retry
+
+  # Optional: Cosmos DB emulator for local development
+  cosmos:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    container_name: deployment-retry-cosmos
+    ports:
+      - "8081:8081"
+    environment:
+      COSMOS_ENABLE_EMULATOR: "true"
+    volumes:
+      - cosmos-data:/data/db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://localhost:8081/_explorer/index.html"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    networks:
+      - deployment-retry
+
+networks:
+  deployment-retry:
+    driver: bridge
+
+volumes:
+  cosmos-data:
