@@ -14,11 +14,11 @@ services:
       # Required Azure settings — update these for your deployment
       AZURE_TENANT_ID: ${AZURE_TENANT_ID:-62c0cb46-1fcc-4c79-ba1b-d7d9fdfbaa68}
       AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-b5fd325c-2a69-40bd-bb31-06d0d3a501a4}
-      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:?Error: AZURE_CLIENT_SECRET not set}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
       AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-31613fe0-1e9b-4a97-b771-dc48fbaa0fbb}
       
       # Cosmos DB settings
-      COSMOS_ENDPOINT: ${COSMOS_ENDPOINT:-https://localhost:8081}
+      COSMOS_ENDPOINT: ${COSMOS_ENDPOINT:-http://cosmos:8081}
       COSMOS_DATABASE: ${COSMOS_DATABASE:-deployretry}
       COSMOS_CONTAINER: ${COSMOS_CONTAINER:-requests}
       

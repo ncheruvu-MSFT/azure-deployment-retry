@@ -113,10 +113,14 @@ curl -X POST http://localhost:7071/api/SubmitRequest \
 The emulator runs in the `cosmos` container and stores data in a local volume (`cosmos-data`).
 
 ### Connect to Cosmos Emulator
+The emulator runs with default credentials. For production, use environment variables or managed identity.
+
+When running locally:
 ```bash
-# From inside the app container, use:
-COSMOS_ENDPOINT=http://cosmos:8081
-COSMOS_KEY=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLMQA0ftQ0PxopQX7ojusAsy/JRO7x6pFd8V6v4nKvEJCvL8M2vK9FQ==
+# Use the environment variables from .env
+docker-compose exec app node
+> const { CosmosClient } = require("@azure/cosmos");
+> const client = new CosmosClient({ endpoint: process.env.COSMOS_ENDPOINT, auth: { key: "..." } });
 ```
 
 ### Reset Data
