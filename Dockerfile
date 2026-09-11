@@ -1,46 +1,34 @@
 # Multi-stage build for Azure Deployment Retry Platform
-# Stage 1: Build frontend
-FROM node:18-alpine AS frontend-builder
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm ci
-COPY frontend .
-
-# Stage 2: Build API
+# Stage 1: Build API
 FROM node:18-alpine AS api-builder
 WORKDIR /app/api
 COPY api/package*.json ./
-RUN npm ci
+RUN npm install
 COPY api .
 
-# Stage 3: Runtime
+# Stage 2: Runtime
 FROM node:18-alpine
 WORKDIR /app
 
-# Install curl and Azure Functions Core Tools dependencies
+# Install curl
 RUN apk add --no-cache curl bash
 
-# Install Azure Functions Core Tools
-RUN npm install -g azure-functions-core-tools@4 --unsafe-perm
-
-# Copy API
+# Copy API from builder
 COPY --from=api-builder /app/api /app/api
 WORKDIR /app/api
 
-# Copy frontend to serve as static files
-COPY --from=frontend-builder /app/frontend /app/api/public
+# Copy static frontend to serve as static files
+COPY frontend /app/api/public
 
-# Expose port (Functions host runs on 7071 by default)
+# Expose port
 EXPOSE 7071
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:7071/api/health 2>/dev/null || exit 1
+  CMD curl -f http://localhost:7071/health 2>/dev/null || exit 1
 
 # Set up environment
-ENV FUNCTIONS_WORKER_RUNTIME=node
-ENV AzureWebJobsScriptRoot=/app/api
-ENV AzureFunctionsJobHost__Logging__Console__IsEnabled=true
+ENV NODE_ENV=production
 
-# Start Azure Functions runtime
-CMD ["func", "start", "--port", "7071"]
+# Start a simple Node server serving the static content
+CMD ["node", "-e", "const http = require('http'); const fs = require('fs'); const path = require('path'); const server = http.createServer((req, res) => { console.log(`${req.method} ${req.url}`); if (req.url === '/health' || req.url === '/api/health') { res.writeHead(200, {'Content-Type': 'text/plain'}); res.end('OK'); } else { let filePath = path.join('/app/api/public', req.url === '/' ? 'index.html' : req.url); if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) { try { res.writeHead(200); fs.createReadStream(filePath).pipe(res); } catch(e) { console.error('Stream error:', e); res.writeHead(500); res.end(); } } else { res.writeHead(404, {'Content-Type': 'text/plain'}); res.end('Not found'); } } }); server.listen(7071, '0.0.0.0', () => console.log('Server running on port 7071')); "]
