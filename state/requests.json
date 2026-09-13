@@ -35,12 +35,12 @@
     "notifyEmail": "",
     "notifyTeams": "",
     "status": "retrying",
-    "attemptCount": 358,
+    "attemptCount": 359,
     "maxAttempts": 432,
     "retryIntervalMinutes": 10,
     "createdAt": "2026-09-08T16:32:30.724Z",
-    "updatedAt": "2026-09-13T08:33:40.915Z",
-    "lastAttemptAt": "2026-09-13T08:33:40.915Z",
+    "updatedAt": "2026-09-13T08:53:46.171Z",
+    "lastAttemptAt": "2026-09-13T08:53:46.171Z",
     "completedAt": null,
     "attempts": [
       {
@@ -2548,6 +2548,13 @@
         "result": "quota_blocked",
         "errorCode": "QuotaPreCheckFailed",
         "errorMessage": "Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+      },
+      {
+        "attemptNumber": 359,
+        "timestamp": "2026-09-13T08:53:46.171Z",
+        "result": "quota_blocked",
+        "errorCode": "QuotaPreCheckFailed",
+        "errorMessage": "Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
       }
     ],
     "lastError": {
@@ -2598,12 +2605,12 @@
     "notifyEmail": "",
     "notifyTeams": "",
     "status": "retrying",
-    "attemptCount": 135,
+    "attemptCount": 136,
     "maxAttempts": 432,
     "retryIntervalMinutes": 10,
     "createdAt": "2026-09-11T13:02:57.730Z",
-    "updatedAt": "2026-09-13T08:33:37.221Z",
-    "lastAttemptAt": "2026-09-13T08:33:37.221Z",
+    "updatedAt": "2026-09-13T08:53:37.734Z",
+    "lastAttemptAt": "2026-09-13T08:53:37.734Z",
     "completedAt": null,
     "attempts": [
       {
@@ -3547,6 +3554,13 @@
       {
         "attemptNumber": 135,
         "timestamp": "2026-09-13T08:33:37.221Z",
+        "result": "quota_blocked",
+        "errorCode": "QuotaPreCheckFailed",
+        "errorMessage": "Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+      },
+      {
+        "attemptNumber": 136,
+        "timestamp": "2026-09-13T08:53:37.734Z",
         "result": "quota_blocked",
         "errorCode": "QuotaPreCheckFailed",
         "errorMessage": "Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
