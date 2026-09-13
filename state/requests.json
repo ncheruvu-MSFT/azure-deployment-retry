@@ -2745,12 +2745,12 @@
     "notifyEmail": "",
     "notifyTeams": "",
     "status": "retrying",
-    "attemptCount": 156,
+    "attemptCount": 157,
     "maxAttempts": 432,
     "retryIntervalMinutes": 10,
     "createdAt": "2026-09-11T13:02:57.730Z",
-    "updatedAt": "2026-09-13T15:03:46.579Z",
-    "lastAttemptAt": "2026-09-13T15:03:46.579Z",
+    "updatedAt": "2026-09-13T15:23:48.041Z",
+    "lastAttemptAt": "2026-09-13T15:23:48.040Z",
     "completedAt": null,
     "attempts": [
       {
@@ -3841,6 +3841,13 @@
       {
         "attemptNumber": 156,
         "timestamp": "2026-09-13T15:03:46.579Z",
+        "result": "quota_blocked",
+        "errorCode": "QuotaPreCheckFailed",
+        "errorMessage": "Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+      },
+      {
+        "attemptNumber": 157,
+        "timestamp": "2026-09-13T15:23:48.040Z",
         "result": "quota_blocked",
         "errorCode": "QuotaPreCheckFailed",
         "errorMessage": "Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
