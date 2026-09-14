@@ -34,14 +34,14 @@
     "notes": "Imported from failed deployment: hrb-demo-1778687678. Error: ConflictError — A conflict occurred that prevented the operation from completing. The operation failed because the Key Vault '' changed from the point the operation began. This can happen if parallel operations are b",
     "notifyEmail": "",
     "notifyTeams": "",
-    "status": "retrying",
+    "status": "failed",
     "attemptCount": 432,
     "maxAttempts": 432,
     "retryIntervalMinutes": 10,
     "createdAt": "2026-09-08T16:32:30.724Z",
-    "updatedAt": "2026-09-14T07:44:19.322Z",
+    "updatedAt": "2026-09-14T07:54:17.311Z",
     "lastAttemptAt": "2026-09-14T07:44:19.322Z",
-    "completedAt": null,
+    "completedAt": "2026-09-14T07:54:17.311Z",
     "attempts": [
       {
         "attemptNumber": 1,
@@ -3069,8 +3069,8 @@
       }
     ],
     "lastError": {
-      "code": "QuotaPreCheckFailed",
-      "message": "Skipped: Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+      "code": "MaxAttemptsExceeded",
+      "message": "Exceeded 432 retry attempts"
     },
     "preflightChecks": [
       {
