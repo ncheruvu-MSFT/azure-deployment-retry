@@ -3115,14 +3115,14 @@
     "notes": "Imported from failed deployment: hrb-demo-1778686294. Error: DeploymentFailed — Operation cannot be completed without additional quota. See https://aka.ms/antquotahelp for instructions on requesting limit increases. \r\nAdditional details - Location:  \r\nCurrent Limit (Total VMs): 0",
     "notifyEmail": "",
     "notifyTeams": "",
-    "status": "retrying",
+    "status": "failed",
     "attemptCount": 432,
     "maxAttempts": 432,
     "retryIntervalMinutes": 10,
     "createdAt": "2026-09-11T13:02:57.730Z",
-    "updatedAt": "2026-09-17T05:46:24.392Z",
+    "updatedAt": "2026-09-17T05:56:22.543Z",
     "lastAttemptAt": "2026-09-17T05:46:24.391Z",
-    "completedAt": null,
+    "completedAt": "2026-09-17T05:56:22.543Z",
     "attempts": [
       {
         "attemptNumber": 1,
@@ -6150,8 +6150,8 @@
       }
     ],
     "lastError": {
-      "code": "QuotaPreCheckFailed",
-      "message": "Skipped: Standard_LRS is not a GPU SKU (Standard_NC*, Standard_ND*, Standard_NV*, Standard_NP*)"
+      "code": "MaxAttemptsExceeded",
+      "message": "Exceeded 432 retry attempts"
     },
     "preflightChecks": [
       {
